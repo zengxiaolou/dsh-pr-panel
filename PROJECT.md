@@ -24,10 +24,11 @@ src/
   main.ts          Host 侧入口：插件声明、工具注册、路由挂载
   client.ts        客户端入口（web bundle，仅剩浮窗 / 右列标签 / PR 链接接管）
   session-pr-*.ts  进程内登记簿 + 会话转写回填
+  session-lineage.ts 会话血缘：读转写头还原主会话的全部子代理会话
   api/             Host HTTP 路由（session-created-prs / pr-detail / pr-diff / pr-files / 动作路由）
   ui/              icons / utils / markdown-lite / session-pr-panel / tw.*
   tools/           github_* Agent 工具（pr / issue / run / release / …）
-test/              phase1–phase43，入口 node test/run-all.mjs
+test/              phase1–phase44，入口 node test/run-all.mjs
 docs/              session-pr-channel.md（唯一实现说明）+ images
 ```
 

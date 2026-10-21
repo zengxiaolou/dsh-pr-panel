@@ -66,12 +66,13 @@ dsh plugin --profile <profile> add ./dsh-pr-panel-0.1.0.tgz
 | 按文件补丁 | 整份 diff 撞 GitHub 20000 行上限时改走 `/api/github/pr-files` 逐文件取 patch，不受整体上限约束 |
 | 磁盘快照 | 成功结果落盘到插件数据目录（`session-pr-snapshot.json`），重启后首拍直接返回（毫秒级），下一拍换真数据 |
 | TTL | 列表元数据 30s · 详情 core 8s · 讨论 30s · 文件补丁 60s · 合并方式 300s · 转写重扫 30s；diff 不缓存 |
+| 会话血缘 | 只解压每个转写的第一行（4–5ms/份）读 `parentSession`，BFS 出主会话 + 子代理会话；头按路径永久缓存 |
 | 轮询分档 | 面板 / 卡片展开 8s，只有药丸 30s，窗口后台停；每 3 拍穿透一次 host 缓存；连续失败按 ×2…×8 退避 |
 | 数据量 | 合并后最多 12 条进元数据阶段；元数据缓存 240 条 LRU |
 
 ## 测试
 
-`test/` 下是 **38 个相位**（编号在 `phase1`–`phase43` 区间；随旧界面一起删除的 phase7 / 11 / 12 / 13 / 21 已剔除），全量封闭测试：所有 `gh` 调用都被桩替换，不需要网络、token 或凭证。
+`test/` 下是 **39 个相位**（编号在 `phase1`–`phase44` 区间；随旧界面一起删除的 phase7 / 11 / 12 / 13 / 21 已剔除），全量封闭测试：所有 `gh` 调用都被桩替换，不需要网络、token 或凭证。
 
 ```bash
 node test/run-all.mjs   # 等价于 pnpm test
@@ -93,10 +94,10 @@ pnpm test         # node test/run-all.mjs
 
 - **Host 路由要重启才注册**：`session-created-prs` 返 404 时，先完整重启 DSH。
 - **浮窗会自己消失**：本会话没建过 PR 就不渲染，刻意如此。
-- **最多 12 条**：更早的 PR 需要回 GitHub 看。
+- **最多 12 条**：更早的 PR 需要回 GitHub 看（按创建时间倒序，子代理建的新 PR 不会被挤掉）。
 - **单文件 diff 400 行封顶**：看全量请点「在 GitHub 打开」。
-- **只跟主视图会话**：子 Agent 会话里建的 PR 不会串进来。
-- **跨重启回填依赖系统 `zstd` 命令**（Node 20 的 zlib 没有 zstd API）；缺了会表现为「刚提的看得见，重启后历史 PR 消失」。
+- **子代理会话按转写头还原，最深 4 层**：子代理建的 PR 会带「子代理」小标一起收进来；血缘依赖子会话与主会话在同一工作区（DSH 默认行为）。
+- **跨重启回填依赖系统 `zstd` 命令**（Node 20 的 zlib 没有 zstd API）；缺了会表现为「刚提的看得见，重启后历史 PR 消失」，子代理的 PR 也不可见（血缘同样要读转写头）。
 - 实现细节见 [docs/session-pr-channel.md](docs/session-pr-channel.md)。
 
 ## 历史

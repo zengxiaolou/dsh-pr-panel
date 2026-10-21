@@ -1,6 +1,6 @@
 # 会话 PR 通道（Session PR Channel）
 
-> 一句话：**本会话亲手创建的 PR，永远在右下角留一个入口。**
+> 一句话：**本会话（含它派下去的子代理）创建的 PR，永远在右下角留一个入口。**
 >
 > 这份文档记录**会话 PR 通道**：早期版本里的全局入口与仓库工作台已经移除，PR 回到它真正的归属——当前这个会话。
 
@@ -12,7 +12,7 @@
 
 所以本插件只做一条**会话级** PR 通道：只服务「本会话创建了什么」，分浮窗与右列面板两个界面。
 
-判断标准只有一条：**这个 PR 是不是本会话亲手建的。** 提过的、看过的、评审过的一律不收——混进来，浮窗就退化成第二个 PR 列表。
+判断标准只有一条：**这个 PR 是不是本会话（整棵树）建出来的。** 提过的、看过的、评审过的一律不收——混进来，浮窗就退化成第二个 PR 列表。子代理会话算同一个会话：活是主会话派出去的，PR 也在同一个对话里出现。
 
 ### 1.1 已移除的部分
 
@@ -52,7 +52,7 @@
 
 每行两行：
 - 第一行：`#编号` + 标题（单行截断，吃满宽度）+ 状态徽章（`open` / `draft` / `merged` / `closed`）；
-- 第二行：目标分支色标 → 仓库名 → CI 圆点（绿通过 / 红失败 / 黄进行中 / 灰无检查）。
+- 第二行：目标分支色标 → 仓库名 →（子代理建的带 `子代理` 小标）→ CI 圆点（绿通过 / 红失败 / 黄进行中 / 灰无检查）。
 
 **增删行数（`+147 −14`）不在卡片上**：它是「PR 大小」的弱信号，却要挤掉标题宽度——标题能多看十几个字更值钱；需要看增删时点进面板，头部与文件列表都写着。卡片头部有刷新与收起，点任意一行打开右列面板。
 
@@ -124,24 +124,30 @@
 
 ## 3. 数据口径：只认「本会话新建」
 
+口径里的「本会话」是**整棵会话树**：主视图会话 + 它派下去的子代理会话（含孙代理）。发版、并行工作面这类活常常派给 subagent 去做，PR 写在子会话的转写里；只认主会话就会漏掉一大半，「我刚提的 PR 呢」直接问不出来。
+
 | 创建方式 | 计入 | 判定依据 |
 | --- | --- | --- |
 | `github_pr` → `action: "create"` | ✅ | 调用参数 + 结果里的 PR 链接；`dry_run: true` 排除 |
 | `bash` 执行 `gh pr create` | ✅ | 命令命中 `\bgh\s+pr\s+create\b` + 输出里的 PR 链接 |
 | `github_api` → `POST .../pulls` | ✅ | 方法为 POST 且端点为 `/pulls`（`/pulls/<n>` 不算） |
+| 子代理会话里用上面三种方式建的 | ✅ | 先按会话头 `parentSession` 还原血缘（见第 4 节），再逐会话套同一口径；行上标 `origin: "subagent"` |
 | 提及 / 查看 / 评审 / 合并 / 被指派 | ❌ | 属旧口径，见下 |
 
 被排除的那类由 **`/api/github/session-prs`** 提供（「对话里出现过的 PR」，提及即收）。该接口为兼容旧版保留，已无界面消费。两个接口**刻意不合并**：一个答「我刚提了什么」，一个答「这会话聊到过哪些 PR」，混在一起两边都不准。
 
 ---
 
-## 4. 两条来源，Host 侧合并
+## 4. 三条来源，Host 侧合并
 
 **① 进程内登记簿（快，但会丢）** — [src/session-pr-tracker.ts](../src/session-pr-tracker.ts)：`Map<sessionId, CreatedPrRef[]>`，`github_pr create` 成功后**同步**写 `{ repo, number, at, via: 'tool' }`，不等落盘。理由：转写是异步写文件的，解压扫描又整份做；只靠转写，点完「创建 PR」要等几秒才看见浮窗。上限 80 条/会话、120 个会话。
 
 **② 转写回填（慢，但跨重启）** — [src/session-pr-scan.ts](../src/session-pr-scan.ts)：扫 `~/.dsh/sessions/<workspace>/<sessionId>/session.v4.jsonl.zstd`，`zstd -dc` 解压后逐行解析 `tool/call` 与 `tool/result`，按第 3 节口径配对：**只有「创建类调用 + 结果里出现 PR 链接」才算**。重启后历史 PR 由这条路找回。
 
-**合并**：以 `owner/repo#number`（小写）去重，登记簿优先，两边都有取较新的 `at`；按 `at` 倒序**只留最新 12 条**再补元数据。
+**③ 会话血缘（决定①②扫哪些会话）** — [src/session-lineage.ts](../src/session-lineage.ts)：DSH 的会话转写第一行是 `{"type":"session",...}` 头，子代理会话在头里带 `parentSession` / `origin:"subagent"` / `delegationDepth`。这里**只解压到第一行就杀掉 zstd**（本机实测 4–5ms/份），按文件路径永久缓存（头写进文件后不会再变），再 BFS 出整棵子树。深度上限 4 层、单次最多 400 个会话；没有 `zstd` 时退化成「没有子代理」，主会话的数据不受影响。
+
+**合并**：按血缘顺序（主会话在前、子代理在后）依次把每个会话的登记簿与转写回填并入，以 `owner/repo#number`（小写）去重——**同一 PR 出现在两棵树里时口径保持 `main`**；两边都有取较新的 `at`；按 `at` 倒序**只留最新 12 条**再补元数据。每行带 `origin`（`main` / `subagent`）、`originSessionId`、`depth`，界面据此打「子代理」小标。
+
 
 ---
 
@@ -153,14 +159,17 @@
 
 | 参数 | 必填 | 说明 |
 | --- | --- | --- |
-| `sessionId` | ✅ | 会话 id；缺失返回 400 |
+| `sessionId` | ✅ | 会话 id（主视图会话）；缺失返回 400 |
 | `refresh` | | `1` 时跳过所有缓存，强制重扫转写 + 重拉元数据 |
+| `lite` | | `1` 时只回编号/仓库，不跑 `gh pr view`（浮窗首屏） |
 
 ```json
 { "ok": true, "data": {
   "sessionId": "session-xxxx", "transcript": "session-xxxx", "reason": null, "total": 2,
+  "descendants": 3,
   "items": [{
     "repo": "owner/repo", "number": 123, "at": 1760000000000, "via": "tool",
+    "origin": "subagent", "originSessionId": "session-yyyy", "depth": 1,
     "title": "feat: ...", "state": "OPEN", "isDraft": false,
     "url": "https://github.com/owner/repo/pull/123", "author": "alice",
     "baseRefName": "main", "headRefName": "feature/x",
@@ -172,6 +181,8 @@
 ```
 
 - `via`：`tool` / `bash` / `api`，PR 由哪种方式创建；
+- `origin`：`main`（主视图会话亲手建）/ `subagent`（子代理会话建）；`originSessionId` 是真正创建它的会话，`depth` 是血缘层级（主会话 0、直接子代理 1……）；
+- `descendants`：这次枚举到的子代理会话数（0 = 没有子代理，口径与改造前一致）；
 - `checks.state`：`pass` / `fail` / `pending` / `none`，由 `statusCheckRollup` 归并；
 - `missing: true`：元数据没取到（断网/未登录），其余字段是兜底值。
 
@@ -284,6 +295,8 @@ argv 形状：`['pr','merge',N,'--repo',repo]` 后面按动作追加 `--squash` 
 | 外部内容白名单 | PR 正文/评论里的链接只放行 http(s)、图片只放行 https 或 base64，`javascript:` / `file:` 降级为纯文本（Electron 渲染进程挂着 bridge，必须挡住）。外链带 `rel=noopener noreferrer` |
 | 刷新反馈 | 卡片与面板的 ⟳ 在请求期间转圈并禁用，不再「点了没反应」 |
 | 转写扫描 | 以 `mtime + size` 为键；没变不打解压；在变时最短 60 秒重扫一次（5.4MB 转写解压实测 0.54s，同步做会按住 Host 事件循环，所以解压走异步、且同一份转写的并发请求只解压一次） |
+| 会话血缘 | 只解压每个转写的第一行（实测 4–5ms/份），读到换行就 kill zstd；会话头按路径永久缓存，重复请求 0 次 spawn；同一工作区一次枚举 |
+| 血缘开销上限 | 深度 4 层、单次 400 个会话封顶；子会话转写并发 3 路扫描（与根会话共用 `readSessionCreatedPrs` 的 mtime 缓存） |
 | PR 元数据 | 每条 `repo#number` 缓存 60 秒（`refresh=1` 绕过），4 路并发 `gh pr view` |
 | 大 JSON 不被截断 | `pr-detail` 显式提高输出上限（40 万字符）：PR 正文+评审+评论+文件列表常超 24k 默认值，一截断就无法解析，オ会表现成「永远读取中」 |
 | 空成功即失败 | Host 回 `ok:true` 但缺 `pr` 时改 502、前端改报错 —— 不允许把「没数据」伪装成「还在加载」 |
@@ -299,10 +312,10 @@ argv 形状：`['pr','merge',N,'--repo',repo]` 后面按动作追加 `--squash` 
 
 - **Host 侧路由要重启才注册**：客户端 bundle 热重载，**Host 插件不会**。`session-created-prs` 返 404 时先完整重启一次 DSH，再判断功能是否生效。
 - **浮窗会自己消失**：本会话没建过 PR 就不渲染。刻意如此——常驻入口最后一定变成骚扰。
-- **最多 12 条**：更早的 PR 转写里还有，但接口不返回。
+- **最多 12 条**：更早的 PR 转写里还有，但接口不返回。按创建时间倒序取前 12，子代理建的新 PR 不会被主会话的老 PR 挤掉。
 - **diff 单文件 400 行封顶**：看全量请点「在 GitHub 打开」。
-- **只跟主视图会话**：取当前主视图所属会话（`retainedBy.mainView`），子 Agent 会话建的 PR 不会串进来。
-- **回填依赖系统 `zstd` 命令**：Node 20 的 `zlib` 没有 zstd API。机器上没有 `zstd` 时这条链路静默失效（登记簿仍工作），表现为「刚提的看得见，重启后历史 PR 全消失」。
+- **子代理会话按转写头还原，最深 4 层**：`parentSession` 写在子会话转写的第一行，按它 BFS；更深的链（理论上 DSH 也不常出现）不展开。子代理会话必须和主会话在同一个工作区目录（DSH 的默认行为：子会话继承 cwd），跨工作区派生的子会话不会被串进来。
+- **回填依赖系统 `zstd` 命令**：Node 20 的 `zlib` 没有 zstd API。机器上没有 `zstd` 时这条链路静默失效（登记簿仍工作），表现为「刚提的看得见，重启后历史 PR 全消失」，子代理会话的 PR 也不可见（血缘同样要读转写头）。
 
 ---
 
@@ -337,6 +350,7 @@ curl -s 'http://127.0.0.1:<端口>/api/github/pr-detail?number=123&repo=<owner>/
 | 文件 | 职责 |
 | --- | --- |
 | [src/session-pr-tracker.ts](../src/session-pr-tracker.ts) / [src/session-pr-scan.ts](../src/session-pr-scan.ts) | 登记簿（即时来源）与转写回填扫描（跨重启来源） |
+| [src/session-lineage.ts](../src/session-lineage.ts) | 会话血缘：读转写头（只读到第一行）BFS 出主会话的全部子代理会话 |
 | [src/ui/session-pr-panel.ts](../src/ui/session-pr-panel.ts) | 浮窗 + 右列面板（样式、数据 hook、diff 渲染） |
 | [src/api/routes-actions.ts](../src/api/routes-actions.ts) | `session-created-prs` 与 `pr-detail` 路由 |
 | [src/client.ts](../src/client.ts) | 槽位注入、`openTab` + `openRightbar` 两步打开 |

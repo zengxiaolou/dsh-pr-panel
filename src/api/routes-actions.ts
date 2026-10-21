@@ -14,6 +14,7 @@ import type { GitHubOverviewData, GlobalOverviewData } from '../types.js';
 import { isSafeExternalUrl, sendJson, type RouteDeps } from './route-helpers.js';
 import { listSessionCreatedPrs } from '../session-pr-tracker.js';
 import { readSessionCreatedPrs } from '../session-pr-scan.js';
+import { listSessionDescendants } from '../session-lineage.js';
 import { githubGraphql, githubGet } from '../github-http.js';
 
 /**
@@ -1038,31 +1039,76 @@ export function registerActionRoutes(
         }
         const force = url.searchParams.get('refresh') === '1';
 
-        // 两路合并：登记簿（进程内、即时）优先，转写回填兜底；同一 repo#number 只留一条
-        const merged = new Map<string, { repo: string; number: number; at: number; via: string }>();
-        for (const row of listSessionCreatedPrs(sessionId)) {
-          merged.set(`${row.repo}#${row.number}`.toLowerCase(), { ...row });
-        }
-        const scanned = await readSessionCreatedPrs(sessionId, { force });
-        for (const row of scanned.refs) {
+        // 会话血缘：主会话 + 它的子代理会话。
+        // 「本会话提交的 PR」现在是**整棵树**的口径：主会话把活派给 subagent 后，
+        // 子会话里 github_pr create / gh pr create 建出来的 PR 同样是「这个会话刚提的」。
+        // 不做这一步，发版/并行工作面派下去的 PR 永远不会出现在浮窗里。
+        const descendants = await listSessionDescendants(sessionId);
+        const lineage: Array<{ id: string; depth: number }> = [
+          { id: sessionId, depth: 0 },
+          ...descendants.map((entry) => ({ id: entry.id, depth: entry.depth })),
+        ];
+        /** 血缘签名：子代理会话增减时它才会变，用来判断磁盘快照是否还配得上当前树 */
+        const lineageSignature = lineage.map((entry) => entry.id).sort().join(',');
+        const depthById = new Map(lineage.map((entry) => [entry.id, entry.depth]));
+
+        // 两路合并：登记簿（进程内、即时）优先，转写回填兜底；同一 repo#number 只留一条。
+        // 顺序很关键：主会话先入表，重复时 origin 保持 main；子代理只补空缺。
+        const merged = new Map<string, {
+          repo: string;
+          number: number;
+          at: number;
+          via: string;
+          origin: 'main' | 'subagent';
+          originSessionId: string;
+          depth: number;
+        }>();
+        const addRef = (row: { repo: string; number: number; at: number; via: string }, ownerId: string) => {
           const key = `${row.repo}#${row.number}`.toLowerCase();
           const hit = merged.get(key);
-          if (!hit) merged.set(key, { ...row });
-          else if (row.at > hit.at) hit.at = row.at;
+          if (hit) {
+            if (row.at > hit.at) hit.at = row.at;
+            return;
+          }
+          merged.set(key, {
+            repo: row.repo,
+            number: row.number,
+            at: row.at,
+            via: row.via,
+            origin: ownerId === sessionId ? 'main' : 'subagent',
+            originSessionId: ownerId,
+            depth: depthById.get(ownerId) || 0,
+          });
+        };
+        for (const entry of lineage) {
+          for (const row of listSessionCreatedPrs(entry.id)) addRef(row, entry.id);
+        }
+        // 子会话的转写也要扫：重启后登记簿是空的，历史 PR 全靠回填。
+        // 并发 3：每份转写都要 zstd 解压，棵树可能是十几个子代理，一口气全解会顶住事件循环。
+        const scans = await mapLimitFn(lineage, 3, async (entry) => ({
+          entry,
+          scan: await readSessionCreatedPrs(entry.id, { force }),
+        }));
+        const scanned = scans[0]?.scan ?? { refs: [], transcript: null, reason: '找不到该会话的转写文件' };
+        for (const { entry, scan } of scans) {
+          for (const row of scan.refs) addRef(row, entry.id);
         }
         const refs = Array.from(merged.values()).sort((a, b) => b.at - a.at).slice(0, 12);
 
-        // 冷启动快路径：本进程还没为这个会话提供过数据，且磁盘上有一份 24h 内的成功结果
+        // 冷启动快路径：本进程还没为这个会话提供过数据，且磁盘上有一份 24h 内的成功结果。
+        // 血缘签名必须一致才用：新派出一个子代理（可能刚建了 PR）时，旧快照已经不完整了。
         if (!force && refs.length > 0 && !snapshotServed.has(sessionId)) {
           const snap = loadSessionSnapshot()[sessionId];
           snapshotServed.add(sessionId);
-          if (snap && Array.isArray(snap.items) && snap.items.length > 0 && Date.now() - snap.at < SNAPSHOT_MAX_AGE_MS) {
+          if (snap && snap.sig === lineageSignature && Array.isArray(snap.items) && snap.items.length > 0
+            && Date.now() - snap.at < SNAPSHOT_MAX_AGE_MS) {
             sendJson(res, 200, {
               ok: true,
               data: {
                 sessionId,
                 items: snap.items,
                 total: snap.items.length,
+                descendants: descendants.length,
                 fromSnapshot: true,
                 snapshotAt: snap.at,
               },
@@ -1080,6 +1126,11 @@ export function registerActionRoutes(
           number: ref.number,
           at: ref.at,
           via: ref.via,
+          // 来源：main = 主视图会话亲手建的；subagent = 派下去的子代理会话建的。
+          // 界面据此加「子代理」小标，用户不会疑惑「我没提过这个 PR 怎么在这」。
+          origin: ref.origin,
+          originSessionId: ref.originSessionId,
+          depth: ref.depth,
           title: meta?.title || `${ref.repo}#${ref.number}`,
           state: meta?.state || 'UNKNOWN',
           isDraft: Boolean(meta?.isDraft),
@@ -1189,6 +1240,9 @@ export function registerActionRoutes(
               number: ref.number,
               at: ref.at,
               via: ref.via,
+              origin: ref.origin,
+              originSessionId: ref.originSessionId,
+              depth: ref.depth,
               title: '',
               state: 'UNKNOWN',
               isDraft: false,
@@ -1231,11 +1285,13 @@ export function registerActionRoutes(
             transcript: scanned.transcript ? path.basename(path.dirname(scanned.transcript)) : null,
             reason: scanned.reason,
             total: items.length,
+            // 子代理会话数：0 表示这棵树只有主会话（旧口径行为），>0 时列表里可能混有 origin=subagent 的行
+            descendants: descendants.length,
             items,
           },
         });
         if (!lite && items.length > 0 && items.every((i: any) => !i.pending)) {
-          saveSessionSnapshot(sessionId, items);
+          saveSessionSnapshot(sessionId, items, lineageSignature);
         }
       } catch (err: any) {
         sendJson(res, 500, { ok: false, error: err?.message || '读取本会话 PR 失败' });
@@ -1811,10 +1867,10 @@ export function registerActionRoutes(
  */
 const SESSION_SNAPSHOT_PATH = path.join(os.homedir(), '.dsh', 'data', 'dsh-pr-panel', 'session-pr-snapshot.json');
 const SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-let sessionSnapshot: Record<string, { at: number; items: any[] }> | null = null;
+let sessionSnapshot: Record<string, { at: number; items: any[]; sig?: string }> | null = null;
 const snapshotServed = new Set<string>();
 
-function loadSessionSnapshot(): Record<string, { at: number; items: any[] }> {
+function loadSessionSnapshot(): Record<string, { at: number; items: any[]; sig?: string }> {
   if (sessionSnapshot) return sessionSnapshot;
   try {
     const raw = fs.readFileSync(SESSION_SNAPSHOT_PATH, 'utf8');
@@ -1826,10 +1882,10 @@ function loadSessionSnapshot(): Record<string, { at: number; items: any[] }> {
   return sessionSnapshot!;
 }
 
-function saveSessionSnapshot(sessionId: string, items: any[]): void {
+function saveSessionSnapshot(sessionId: string, items: any[], sig?: string): void {
   try {
     const all = loadSessionSnapshot();
-    all[sessionId] = { at: Date.now(), items: items.slice(0, 12) };
+    all[sessionId] = { at: Date.now(), items: items.slice(0, 12), sig };
     // 最多留 20 个会话，避免无限增长
     const keys = Object.keys(all);
     if (keys.length > 20) {
