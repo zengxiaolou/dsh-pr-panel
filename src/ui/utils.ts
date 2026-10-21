@@ -283,3 +283,15 @@ export function parseGitStatText(statText: string): { files: GitStatItem[]; summ
   return { files, summary };
 }
 
+export function formatDurationMs(ms: any): string {
+  var n = Number(ms);
+  if (!isFinite(n) || n < 0) return "";
+  var sec = Math.round(n / 1000);
+  if (sec < 60) return sec + "s";
+  var min = Math.floor(sec / 60);
+  var s = sec % 60;
+  if (min < 60) return s === 0 ? min + "m" : min + "m" + (s < 10 ? "0" + s : String(s)) + "s";
+  var h = Math.floor(min / 60);
+  var m = min % 60;
+  return h + "h" + (m < 10 ? "0" + m : String(m)) + "m";
+}

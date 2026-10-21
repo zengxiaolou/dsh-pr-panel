@@ -60,3 +60,4 @@ export declare function parseGitStatText(statText: string): {
         deletions: number;
     } | null;
 } | null;
+export declare function formatDurationMs(ms: any): string;

@@ -17,6 +17,7 @@ declare function formatRelativeTime(iso: any): string;
  */
 
 import { Lanes, modeBar, loadGroupMode, saveGroupMode } from './pr-lanes.js';
+import { runConclusionBadge, formatDurationMs } from './utils.js';
 
 export const SESSION_PR_CSS = `
 .ghsp-overlay{position:fixed;right:20px;bottom:148px;z-index:900;display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none;font-size:12px}
@@ -80,8 +81,10 @@ body:not([data-ds-dark-theme]) .ghsp-lane-head{background:color-mix(in srgb, var
 .ghsp-badge.closed{color:var(--dsw-alias-state-error-primary,#f85149);border-color:color-mix(in srgb, var(--dsw-alias-state-error-primary,#f85149) 40%, transparent);background:color-mix(in srgb, var(--dsw-alias-state-error-primary,#f85149) 10%, transparent)}
 .ghsp-badge.unknown{color:var(--dsw-alias-label-secondary);border-color:var(--dsw-alias-border-l2)}
 
-.ghsp-panel{display:flex;flex-direction:column;height:100%;min-height:0;font-size:12px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);border-top-left-radius:12px;border-top-right-radius:12px;overflow:hidden}
-.ghsp-head{flex:0 0 auto;padding:10px 12px 9px;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}
+.ghsp-panel{display:flex;flex-direction:column;height:100%;min-height:0;font-size:12px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);overflow:hidden}
+/* 头部做成与内容卡片同宽、同圆角的卡片：原来它是通栏底色，而下面两列有 10px 内缩，
+   视觉上像是「头部比内容宽一截」 */
+.ghsp-head{flex:0 0 auto;margin:10px 10px 0;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1)}
 .ghsp-head-top{display:flex;align-items:center;gap:8px;min-width:0}
 .ghsp-repo{font-size:11px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ghsp-num{font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
@@ -614,6 +617,197 @@ function renderOriginTag(item: any) {
  * 浮窗
  * ------------------------------------------------------------------ */
 
+function CiPipelineCard(props: any) {
+  var cwd = props && props.cwd;
+  var repo = props && props.repo;
+  var [state, setState] = React.useState({ loading: true, error: null as string | null, data: null as any });
+  var [tick, setTick] = React.useState(0);
+  var [visible, setVisible] = React.useState(false);
+  var rootRef = React.useRef(null as any);
+
+  // 分页显示是 DOM 层的（data-tab-page + hidden），React 并不知道当前在哪个 tab。
+  // 所以盯住自己所在分页的 hidden：Actions 分页没打开时一个请求都不发。
+  // 这也顺带解决了「进面板就多打一次 Actions API」的白烧额度。
+  React.useEffect(function () {
+    var el = rootRef.current;
+    var page = el && el.closest ? el.closest("[data-tab-page]") : null;
+    if (!page) { setVisible(true); return; }
+    setVisible(!page.hidden);
+    if (typeof MutationObserver !== "function") return;
+    var obs = new MutationObserver(function () { setVisible(!page.hidden); });
+    obs.observe(page, { attributes: true, attributeFilter: ["hidden"] });
+    return function () { obs.disconnect(); };
+  }, []);
+
+  React.useEffect(function () {
+    if (!visible) return;
+    if (!cwd && !repo) return;
+    var alive = true;
+    var load = function (force: boolean) {
+      var controller = typeof AbortController === "function" ? new AbortController() : null;
+      var qs = "/api/github/ci-pipeline?limit=8";
+      if (cwd) qs += "&cwd=" + encodeURIComponent(String(cwd));
+      if (repo) qs += "&repo=" + encodeURIComponent(String(repo));
+      if (force) qs += "&refresh=1";
+      var timer = setTimeout(function () { if (controller) controller.abort(); }, 20000);
+      if (!state.data) setState(function (prev: any) { return { loading: true, error: null, data: prev.data }; });
+      fetch(qs, { headers: { accept: "application/json" }, signal: controller ? controller.signal : undefined })
+        .then(function (r) { return r.json(); })
+        .then(function (json: any) {
+          if (!alive) return;
+          if (json && json.ok && json.data) setState({ loading: false, error: null, data: json.data });
+          else setState(function (prev: any) {
+            return { loading: false, error: (json && (json.error || json.message)) || "读取 CI 流水线失败", data: prev.data };
+          });
+        })
+        .catch(function (err: any) {
+          if (!alive) return;
+          setState(function (prev: any) {
+            return { loading: false, error: String((err && err.message) || err), data: prev.data };
+          });
+        })
+        .then(function () { clearTimeout(timer); });
+    };
+    load(tick > 0);
+    // 20s 一轮：目的是让「运行中」的进度条会走，不追求实时；
+    // 页面切到后台时停轮询，回到前台由 visibilitychange 那个 effect 重新触发。
+    var interval = setInterval(function () {
+      try {
+        if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      } catch (e) { /* 无 DOM 环境就当可见 */ }
+      load(false);
+    }, 20000);
+    return function () { alive = false; clearInterval(interval); };
+  }, [visible, cwd, repo, tick]);
+
+  var data = state.data;
+  var workflows = (data && data.workflows) || [];
+  var totals = (data && data.totals) || { workflows: 0, running: 0, queued: 0, failed: 0 };
+
+  var head = React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" } },
+    React.createElement("h3", { className: "gh2-section-title", style: { margin: 0 } }, "CI/CD"),
+    React.createElement("span", { className: "gh2-section-count" }, String(workflows.length)),
+    totals.running ? React.createElement("span", { className: "gh2-chip gh2-chip--busy" }, totals.running + " 运行中") : null,
+    totals.queued ? React.createElement("span", { className: "gh2-chip gh2-chip--idle" }, totals.queued + " 排队") : null,
+    totals.failed ? React.createElement("span", { className: "gh2-chip gh2-chip--bad" }, totals.failed + " 失败") : null,
+    React.createElement("button", {
+      type: "button",
+      className: "gh2-icon-btn",
+      title: "立即刷新 CI 流水线（绕过 15s 缓存）",
+      style: { marginLeft: "auto" },
+      onClick: function () { setTick(tick + 1); },
+    }, "↻"));
+
+  var wrap = function (body: any) {
+    return React.createElement("div", { ref: rootRef, className: "dsh-github-section" }, head, body);
+  };
+
+  // 死路状态要给出口：重试按钮 + 权限提示。
+  // 「读不到 Actions」最可能是 token 缺 actions:read，只显示一行原因等于让人干瞪眼。
+  var retryBtn = React.createElement("button", {
+    type: "button",
+    className: "gh2-quick-btn",
+    style: { marginTop: "6px" },
+    onClick: function () { setTick(tick + 1); },
+  }, "重试");
+  var withScopeHint = function (text: string) {
+    var needScope = /权限|permission|scope|403|forbidden/i.test(String(text || ""));
+    return React.createElement("div", { className: "gh2-empty" },
+      text,
+      needScope
+        ? React.createElement("div", { style: { marginTop: "4px", color: "var(--dsw-alias-label-tertiary)", fontSize: "10px" } },
+            "拉取 Actions 需要 actions:read：`gh auth refresh -h github.com -s actions`")
+        : null,
+      retryBtn);
+  };
+
+  if (state.loading && !data) return wrap(React.createElement("div", { className: "gh2-empty" }, "读取 CI 流水线…"));
+  if (state.error && !data) return wrap(withScopeHint("CI 读取失败：" + state.error));
+  if (data && data.available === false) {
+    return wrap(withScopeHint(data.reason || "这个仓库没有可读的 Actions 运行记录"));
+  }
+  if (workflows.length === 0) return wrap(React.createElement("div", { className: "gh2-empty" }, "暂无工作流运行"));
+
+  return wrap(React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: "6px" } },
+    workflows.map(function (wf: any) {
+      var latest = (wf && wf.latest) || {};
+      var stats = (wf && wf.stats) || {};
+      var badge = runConclusionBadge(latest.conclusion, latest.status);
+      // 组件层只定义了 ok/bad/warn/busy/idle 五种色调（tw.src.css），
+      // 用 success/error 这类「语义名」会拿不到样式，徽章变成无色文本。
+      var tone = badge.tone === "green" ? "ok" : badge.tone === "red" ? "bad"
+        : badge.tone === "yellow" ? "warn" : badge.tone === "blue" ? "busy" : "idle";
+      var active = latest.active;
+      var statusLower = String(latest.status || "").toLowerCase();
+      var when = latest.completedAt
+        ? formatRelativeTime(latest.completedAt) + "完成"
+        : (statusLower === "in_progress" ? "运行中" : statusLower === "queued" ? "排队中" : "");
+      var dur = formatDurationMs(latest.durationMs);
+      var rate = typeof stats.successRate === "number" ? Math.round(stats.successRate * 100) + "%" : "";
+      // 运行中：说「已经跑了多久」+「历史均值多少」，让人能判断是不是卡住了。
+      // 光有进度条看不出「这 4 分钟是正常还是异常」。
+      var startedMs = Date.parse(String(latest.startedAt || ""));
+      var elapsed = statusLower === "in_progress" && isFinite(startedMs) && startedMs > 0
+        ? formatDurationMs(Date.now() - startedMs) : "";
+      var avg = stats.avgDurationMs ? formatDurationMs(stats.avgDurationMs) : "";
+      var metaParts = [
+        when,
+        dur ? "用时 " + dur : "",
+        elapsed ? "已跑 " + elapsed + (avg ? " / 均值 " + avg : "") : "",
+        rate ? "成功率 " + rate : "",
+        !elapsed && avg ? "均值 " + avg : "",
+        latest.headBranch || "",
+      ].filter(Boolean);
+
+      return React.createElement("div", {
+        key: String(wf.id || wf.name),
+        style: {
+          padding: "6px 8px", borderRadius: "8px",
+          border: "1px solid var(--dsw-alias-border-l2)",
+          background: "var(--dsw-alias-bg-layer-1, transparent)",
+        },
+      },
+        React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "6px", minWidth: 0 } },
+          React.createElement("span", { className: "gh2-dot gh2-dot--" + tone, title: badge.label }),
+          React.createElement("a", {
+            href: latest.url || undefined, target: "_blank", rel: "noreferrer",
+            title: (wf.name || "") + "\n" + badge.label,
+            style: { flex: 1, minWidth: 0, fontSize: "12px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--dsw-alias-label-primary)" },
+          }, wf.name || "workflow"),
+          React.createElement("span", { className: "gh2-chip gh2-chip--" + tone, style: { fontSize: "10px" } }, badge.label.replace(/^[^\u4e00-\u9fa5]+/, "").trim())),
+        // 正在跑的：job 名 + 第几步 + 进度条（这就是「走到哪一步」）
+        active
+          ? React.createElement("div", { style: { marginTop: "5px" } },
+              React.createElement("div", { style: { fontSize: "10px", color: "var(--dsw-alias-label-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
+                (active.stepsTotal > 0
+                  ? "第 " + Math.min(active.stepsDone + 1, active.stepsTotal) + "/" + active.stepsTotal + " 步"
+                  : active.jobStatus.toLowerCase()) +
+                (active.stepName ? " · " + active.stepName : "") +
+                " · " + active.job),
+              React.createElement("div", {
+                style: { height: "3px", marginTop: "3px", borderRadius: "2px", background: "var(--dsw-alias-bg-layer-2)", overflow: "hidden" },
+                title: active.stepsDone + "/" + active.stepsTotal + " 步完成",
+              },
+                React.createElement("div", {
+                  style: {
+                    width: Math.round((Number(active.ratio) || 0) * 100) + "%",
+                    height: "100%",
+                    background: "var(--dsw-alias-brand-primary, #2f81f7)",
+                    transition: "width .3s ease",
+                  },
+                })))
+          : null,
+        React.createElement("div", { style: { marginTop: "4px", fontSize: "10px", color: "var(--dsw-alias-label-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: metaParts.join(" · ") },
+          metaParts.join(" · ")));
+    }),
+    (Number(totals.workflows) || 0) > workflows.length
+      ? React.createElement("div", {
+          style: { fontSize: "10px", color: "var(--dsw-alias-label-secondary)", paddingLeft: "2px" },
+          title: "只展示最近 " + workflows.length + " 个 workflow；总数与失败数按全量统计",
+        }, "另有 " + (Number(totals.workflows) - workflows.length) + " 个 workflow 未显示（失败数按全量算）")
+      : null));
+}
+
 export function SessionPrOverlay(props: any) {
   // useSessions 是宿主注入的 hook：它没到位的首帧不能调用，否则下一帧多一个 hook 会炸。
   // 所以按「有没有」分成两个组件，让 React 用挂载/卸载来处理能力到达，而不是改变 hook 数量。
@@ -1042,7 +1236,18 @@ function usePrDetail(repo: string | null, number: number | null, reloadTick = 0,
       return;
     }
     var alive = true;
-    setState(function (prev: any) { return { loading: true, error: null, pr: prev && prev.pr && prev.pr.number === number ? prev.pr : null, diff: prev && prev.pr && prev.pr.number === number ? prev.diff : "", diffError: "" }; });
+    setState(function (prev: any) {
+      var same = prev && prev.pr && prev.pr.number === number;
+      return {
+        loading: true,
+        error: null,
+        pr: same ? prev.pr : null,
+        diff: same ? prev.diff : "",
+        diffError: "",
+        // at 必须保留：它驱动「更新于 X」，每轮清空会让这一行闪一下（实测 8s 一次）
+        at: same ? prev.at : 0,
+      };
+    });
     // withDiff=0：详情不等 diff。大 PR 的 gh pr diff 会跑满 30s，等它等于整页白屏。
     // thread（reviews/comments/commits）拆成独立请求：core 先画出来，讨论区后到
     var qs = "/api/github/pr-detail?withDiff=0&withThread=0&number=" + String(number)
@@ -1802,6 +2007,12 @@ function SessionPrPanelBody(props: any) {
         React.createElement("div", { className: "ghsp-head-top" },
           renderOctocat(14, "currentColor"),
           React.createElement("span", { className: "ghsp-repo" }, "本会话提交的 PR"))),
+      // CI/CD 泳道：仓库级 workflow 视图（什么时候完成 / 走到第几步）。
+      // 放在列表上方——它回答的是「这个仓库的 Actions 现在在干什么」，
+      // 与下面「本会话提了哪些 PR」是两个问题。
+      items.length > 0
+        ? React.createElement(CiPipelineCard, { repo: items[0].repo })
+        : null,
       items.length === 0
         ? (list && list.loading
             ? React.createElement("div", { className: "ghsp-skeleton" },
