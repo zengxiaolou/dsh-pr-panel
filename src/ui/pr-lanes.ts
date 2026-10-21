@@ -43,10 +43,36 @@ export function groupItemsByStage(items: any[]) {
  * ------------------------------------------------------------------ */
 
 /** 功能键：head 分支名；拿不到时退化成 repo#number，保证每组唯一 */
+/**
+ * 版本号提取：`release_v1.0.79` / `sync/release-0.1.49-...` / `回填 v1.0.67 的 13 个提交`
+ * 都归到 `v1.0.67` 这种键上。
+ *
+ * 为什么要它：同一个变更往往会以不同的 head 名在多个分支上来回搬
+ * （`fix/backfill-v1.0.67-into-v1.0.68` → `sync/release-v1.0.67-backfill-to-main`），
+ * 按 head 归组会把一个功能的 2–3 个 PR 拆成 2–3 条泳道，等于没分组。
+ * 这批 PR 共有的稳定信号是版本号，因此优先按版本聚合；没有版本号时才退回 head。
+ */
+function versionKeyOf(item: any) {
+  var fields = [item && item.headRefName, item && item.baseRefName, item && item.title];
+  for (var i = 0; i < fields.length; i += 1) {
+    var m = String(fields[i] || "").match(/(?:^|[^\d.])v?(\d+\.\d+\.\d+)/i);
+    if (m) return "v" + m[1];
+  }
+  return "";
+}
+
 function featureKeyOf(item: any) {
+  var ver = versionKeyOf(item);
+  if (ver) return ver;
   var head = String((item && item.headRefName) || "").trim();
   if (head) return head;
   return String((item && item.repo) || "") + "#" + String((item && item.number) || "");
+}
+
+/** 泳道标签：版本键原样展示，head 键做长度截断 */
+function featureLabelOf(key: string) {
+  if (/^v\d+\.\d+\.\d+$/.test(key)) return key;
+  return shortFeatureName(key);
 }
 
 /** 「推进度」：other 的 order=99 是排序哨兵，不能当进度用 */
@@ -98,9 +124,10 @@ export function buildLanes(items: any[], mode: string) {
         key: "f:" + g.key,
         id: (st && st.id) || "other",
         chip: st ? st.label : "",
-        name: shortFeatureName(g.key),
+        name: featureLabelOf(g.key),
         count: g.items.length,
-        title: g.items.length + " 个 PR · 最远走到 " + (st ? st.label : "未归类") + (g.done ? " · 已全部合并" : ""),
+        title: g.items.length + " 个 PR · 最远走到 " + (st ? st.label : "未归类") + (g.done ? " · 已全部合并" : "")
+          + (g.items.length > 1 ? "\n同一版本/变更集在各分支上的 PR 收在此组" : ""),
         items: g.items,
       };
     });

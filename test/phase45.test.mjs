@@ -71,6 +71,26 @@ eq(stageLanes[0].chip, 'Dev', '阶段模式 chip 是阶段名');
 const featLanes = lanes.buildLanes(sorted.concat([]), 'feature');
 ok(featLanes.every((l) => typeof l.count === 'number' && Array.isArray(l.items)), '两种模式同一形状');
 
+console.log('\n--- 4.5 功能归组：按版本聚合，而不是按 head ---');
+const chain = lanes.groupItemsByFeature([
+  { number: 1, headRefName: 'fix/backfill-v1.0.67-into-v1.0.68', baseRefName: 'release_v1.0.68', title: 'fix(release): 回填 v1.0.67 未进入 v1.0.68 的 13 个提交', state: 'OPEN', stage: { id: 'release', order: 30 } },
+  { number: 2, headRefName: 'sync/release-v1.0.67-backfill-to-main', baseRefName: 'main', title: 'fix(release): main 补回 v1.0.67 缺失的 13 个提交', state: 'OPEN', stage: { id: 'prod', order: 40 } },
+  { number: 3, headRefName: 'feat/login', baseRefName: 'dev', title: 'feat: 登录页', state: 'OPEN', stage: { id: 'dev', order: 10 } },
+  { number: 4, headRefName: 'feat/pay', baseRefName: 'dev', title: 'feat: 支付页', state: 'OPEN', stage: { id: 'dev', order: 10 } },
+]);
+eq(chain.length, 3, '同版本的两个不同 head 收成一条，没版本号的按 head 分开');
+const v67 = chain.find((g) => g.key === 'v1.0.67');
+ok(!!v67, '版本键是 v1.0.67');
+eq(v67.items.length, 2, '两个分支上的同版本 PR 收在一组');
+eq(v67.furthest.id, 'prod', '取走得最远的阶段（Prod）');
+// Host 与客户端两套归组必须同一口径，否则「未来谁接错了」会静默分组错
+const hostChain = groupPrsByFeature([
+  { number: 1, headRefName: 'fix/backfill-v1.0.67-into-v1.0.68', baseRefName: 'release_v1.0.68', state: 'OPEN' },
+  { number: 2, headRefName: 'sync/release-v1.0.67-backfill-to-main', baseRefName: 'main', state: 'OPEN' },
+]);
+eq(hostChain.length, 1, 'Host 侧归组同样按版本聚合');
+eq(hostChain[0].key, 'v1.0.67', 'Host 侧键也是 v1.0.67');
+
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
 ok(client.includes('// ---- [Bundled: pr-lanes.js] ----'), 'pr-lanes 已打进 bundle');

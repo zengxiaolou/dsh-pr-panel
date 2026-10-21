@@ -313,12 +313,27 @@ function advanceRank(stage: PipelineStage | null | undefined): number {
   return stage.id === 'other' ? -1 : stage.order;
 }
 
+/**
+ * 版本号提取（与 src/ui/pr-lanes.ts 的客户端实现保持同一口径）：
+ * 同一变更经常以不同 head 名在多个分支间搬运，按 head 归组会把它拆成多条泳道。
+ * 这批 PR 共有的稳定信号是版本号，优先按版本聚合，没有版本号才退回 head。
+ */
+export function featureKeyOf(item: any): string {
+  const fields = [item?.headRefName, item?.baseRefName, item?.title];
+  for (const field of fields) {
+    const m = String(field || '').match(/(?:^|[^\d.])v?(\d+\.\d+\.\d+)/i);
+    if (m) return `v${m[1]}`;
+  }
+  const head = String(item?.headRefName || '').trim();
+  if (head) return head;
+  return `${item?.repo || ''}#${item?.number || ''}`;
+}
+
 export function groupPrsByFeature<T extends Record<string, any>>(items: T[]): Array<FeatureGroup<T>> {
   const sorted = sortPrsByStage(items);
   const buckets = new Map<string, T[]>();
   for (const item of sorted) {
-    const head = String((item && item.headRefName) || '').trim();
-    const key = head || `${(item && item.repo) || ''}#${(item && item.number) || ''}`;
+    const key = featureKeyOf(item);
     const list = buckets.get(key) || [];
     list.push(item);
     buckets.set(key, list);

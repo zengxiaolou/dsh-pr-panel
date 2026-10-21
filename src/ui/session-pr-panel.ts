@@ -44,12 +44,14 @@ body:not([data-ds-dark-theme]) .ghsp-card{background:color-mix(in srgb, var(--ds
 .ghsp-lane+.ghsp-lane{border-top:1px solid var(--dsw-alias-border-l2)}
 .ghsp-lane-head{display:flex;align-items:center;gap:6px;padding:7px 10px 3px;position:sticky;top:0;background:color-mix(in srgb, var(--dsw-alias-bg-base) 94%, #000 6%);z-index:1}
 body:not([data-ds-dark-theme]) .ghsp-lane-head{background:color-mix(in srgb, var(--dsw-alias-bg-base) 96%, #fff 4%)}
-.ghsp-lane-chip{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:1px 6px;border-radius:999px;border:1px solid currentColor;line-height:1.5}
-.ghsp-lane-chip.dev{color:var(--dsw-alias-brand-primary,#2f81f7)}
-.ghsp-lane-chip.test{color:var(--dsw-alias-state-warn-primary,#9a6700)}
-.ghsp-lane-chip.release{color:var(--dsw-alias-state-info-primary,#8250df)}
-.ghsp-lane-chip.prod{color:var(--dsw-alias-state-success-primary,#1a7f37)}
-.ghsp-lane-chip.other{color:var(--dsw-alias-label-secondary,#656d76)}
+/* 阶段胶囊：实心底色 + 白字。原来的「透明底 + 彩色描边」在深色背景上发虚，
+   一排下来像一堆空框；实心块更容易一眼扫出「这是 Release 还是 Prod」。 */
+.ghsp-lane-chip{font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:999px;border:0;line-height:1.4;color:#fff;background:#6e7781}
+.ghsp-lane-chip.dev{background:#2f81f7}
+.ghsp-lane-chip.test{background:#bf8700}
+.ghsp-lane-chip.release{background:#8250df}
+.ghsp-lane-chip.prod{background:#1a7f37}
+.ghsp-lane-chip.other{background:#6e7781}
 .ghsp-lane-count{font-size:10px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .ghsp-lane-name{flex:1;min-width:0;font-size:11px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ghsp-lane-chevron{font-size:9px;line-height:1;width:9px;flex:0 0 auto;color:var(--dsw-alias-label-secondary)}
