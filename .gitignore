@@ -7,3 +7,6 @@ Thumbs.db
 .idea/
 .vscode/
 docs/plans/
+
+# 本地联调用的软链，不入库
+node_modules
