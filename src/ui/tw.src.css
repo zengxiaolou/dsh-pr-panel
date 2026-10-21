@@ -1,0 +1,292 @@
+/*
+ * Tailwind 源文件 —— 面板的视觉系统在这里用工具类 + @apply 定义。
+ * 编译产物注入成 <style>，不依赖任何运行时。
+ *
+ * 设计取向（相对上一版「台帐」的重做）：上一版太素，缺视觉锚点。
+ * 这一版给「面」：表面用 1px 描边 + 半透明叠层做出层次（因为 DSH 的
+ * bg-layer 在浅色下同色，只能靠 alpha 叠层）、状态用带底色的胶囊、
+ * Tab 用分段控件、行用块状 hover。
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  /*
+   * 面板级颜色变量：唯一的「主题适配点」。
+   * 浅色用 DSH 的浅色 token，暗色用暗色 token；两边都给了可读性 fallback，
+   * 这样即使宿主不提供某个 token，也不会出现深灰叠深底。
+   */
+  .gh2-theme,
+  .gh2-panel {
+    --gh-c-fg: var(--dsw-alias-label-primary, #1f2328);
+    --gh-c-fg2: var(--dsw-alias-label-secondary, #57606a);
+    --gh-c-fg3: var(--dsw-alias-label-tertiary, #6e7781);
+    --gh-c-line: var(--dsw-alias-border-l2, #d8dee4);
+    --gh-c-line-strong: var(--dsw-alias-border-l3, #c8d1d9);
+    --gh-c-accent: var(--dsw-alias-link, #0969da);
+    --gh-c-ok: var(--dsw-alias-state-success-primary, #1a7f37);
+    --gh-c-bad: var(--dsw-alias-state-error-primary, #cf222e);
+    --gh-c-warn: var(--dsw-alias-state-attention-primary, #9a6700);
+    --gh-c-busy: var(--dsw-alias-state-business-primary, #0969da);
+  }
+  [data-ds-dark-theme] .gh2-theme,
+  [data-ds-dark-theme] .gh2-panel {
+    --gh-c-fg: var(--dsw-alias-label-primary, #f0f6fc);
+    --gh-c-fg2: var(--dsw-alias-label-secondary, #adbac7);
+    --gh-c-fg3: var(--dsw-alias-label-tertiary, #8b949e);
+    --gh-c-line: var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.12));
+    --gh-c-line-strong: var(--dsw-alias-border-l3, rgba(255, 255, 255, 0.18));
+    --gh-c-accent: var(--dsw-alias-link, #58a6ff);
+    --gh-c-ok: var(--dsw-alias-state-success-primary, #3fb950);
+    --gh-c-bad: var(--dsw-alias-state-error-primary, #f85149);
+    --gh-c-warn: var(--dsw-alias-state-attention-primary, #d29922);
+    --gh-c-busy: var(--dsw-alias-state-business-primary, #58a6ff);
+  }
+
+  /* 面板容器：收紧横向预算，给内容更多宽度 */
+  .gh2-panel {
+    @apply flex flex-col gap-3 px-3 pb-6 pt-3;
+  }
+
+  /* ── 仓库卡片：面板里唯一的「面」 ───────────────────────────── */
+  .gh2-card {
+    @apply relative flex flex-col gap-2 rounded-panel border border-line p-3.5;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.36));
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  }
+  [data-ds-dark-theme] .gh2-card {
+    border-color: rgba(255, 255, 255, 0.1);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018));
+    box-shadow: none;
+  }
+
+  .gh2-card-top {
+    @apply flex min-w-0 items-center gap-2;
+  }
+
+  /* 仓库标识：给 slug 一个视觉落点，而不是一行裸文字 */
+  .gh2-repo-mark {
+    @apply flex h-6 w-6 shrink-0 items-center justify-center rounded-chip border border-line text-fg-secondary;
+    background: rgba(0, 0, 0, 0.03);
+  }
+  [data-ds-dark-theme] .gh2-repo-mark {
+    border-color: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .gh2-slug {
+    @apply min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-slug text-fg-primary no-underline;
+  }
+  .gh2-slug:hover {
+    @apply text-accent underline;
+  }
+  .gh2-slug--error {
+    @apply text-row font-medium text-bad;
+  }
+
+  .gh2-card-meta {
+    @apply flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 pl-8 text-sub text-fg-secondary;
+  }
+
+  /* 分支：等宽 + 半透明底，让「机器事实」有个可辨识的形 */
+  .gh2-branch {
+    @apply inline-flex min-w-0 max-w-full items-center gap-1 overflow-hidden rounded-chip px-1.5 py-0.5 text-ellipsis whitespace-nowrap font-mono text-[11px] leading-4;
+    background: rgba(9, 105, 218, 0.08);
+    color: var(--dsw-alias-link, #0969da);
+  }
+  [data-ds-dark-theme] .gh2-branch {
+    background: rgba(88, 166, 255, 0.14);
+    color: #79b8ff;
+  }
+
+  .gh2-sync {
+    @apply inline-flex items-center gap-1 rounded-chip px-1.5 py-0.5 font-mono text-[11px] leading-4 text-fg-secondary;
+    background: rgba(0, 0, 0, 0.04);
+  }
+  [data-ds-dark-theme] .gh2-sync {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  /* ── 图标按钮 ──────────────────────────────────────────────── */
+  .gh2-icon-btn {
+    @apply inline-flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-chip border-0 bg-transparent p-0 text-[13px] leading-none text-fg-secondary;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+  .gh2-icon-btn:hover {
+    @apply text-fg-primary;
+    background: rgba(0, 0, 0, 0.06);
+  }
+  [data-ds-dark-theme] .gh2-icon-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  /* ── Tab：分段控件（比下划线更有「面板」感，且窄栏不折行） ───── */
+  .gh2-segments {
+    @apply flex w-full items-center gap-0.5 rounded-block border border-line p-0.5;
+    background: rgba(0, 0, 0, 0.03);
+  }
+  [data-ds-dark-theme] .gh2-segments {
+    border-color: rgba(255, 255, 255, 0.09);
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .gh2-segment {
+    @apply flex min-w-0 flex-1 cursor-pointer items-center justify-center gap-1 rounded-[7px] border-0 bg-transparent px-1 py-1.5 text-sub font-medium text-fg-secondary;
+    transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+  }
+  .gh2-segment:hover {
+    @apply text-fg-primary;
+  }
+  .gh2-segment--active {
+    @apply text-fg-primary;
+    background: var(--dsw-alias-bg-layer-1, #ffffff);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  }
+  [data-ds-dark-theme] .gh2-segment--active {
+    background: rgba(255, 255, 255, 0.14);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  }
+
+  .gh2-count {
+    @apply shrink-0 rounded-[4px] px-1 py-px text-[11px] font-semibold leading-[15px] text-fg-secondary;
+    background: rgba(0, 0, 0, 0.06);
+    font-variant-numeric: tabular-nums;
+  }
+  [data-ds-dark-theme] .gh2-count {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  /* ── 列表：块状行（hover 整行浮起），不是裸文字 ─────────────── */
+  .gh2-list {
+    @apply flex flex-col gap-1;
+  }
+
+  .gh2-row {
+    @apply grid cursor-default items-center gap-x-2.5 rounded-row px-2 py-2;
+    grid-template-columns: 16px 1fr auto;
+    border: 1px solid transparent;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+  .gh2-row:hover {
+    background: rgba(0, 0, 0, 0.035);
+    border-color: rgba(0, 0, 0, 0.06);
+  }
+  [data-ds-dark-theme] .gh2-row:hover {
+    background: rgba(255, 255, 255, 0.055);
+    border-color: rgba(255, 255, 255, 0.07);
+  }
+
+  .gh2-dot {
+    @apply flex h-4 w-4 items-center justify-center rounded-full text-[10px] leading-none;
+  }
+  .gh2-dot--ok { color: var(--dsw-alias-state-success-primary, #1a7f37); }
+  .gh2-dot--bad { color: var(--dsw-alias-state-error-primary, #cf222e); }
+  .gh2-dot--warn { color: var(--dsw-alias-state-attention-primary, #9a6700); }
+  .gh2-dot--busy { color: var(--dsw-alias-state-business-primary, #0969da); }
+  .gh2-dot--idle { color: var(--dsw-alias-label-tertiary, #8c959f); }
+  [data-ds-dark-theme] .gh2-dot--ok { color: #3fb950; }
+  [data-ds-dark-theme] .gh2-dot--bad { color: #f85149; }
+  [data-ds-dark-theme] .gh2-dot--warn { color: #d29922; }
+  [data-ds-dark-theme] .gh2-dot--busy { color: #58a6ff; }
+  [data-ds-dark-theme] .gh2-dot--idle { color: #8b949e; }
+
+  /* 编号前缀（#3934）：等宽、次级色，走 token 而不是行内样式 */
+  .gh2-prefix {
+    @apply shrink-0 font-mono text-[11px] leading-4 text-fg-secondary;
+  }
+
+  .gh2-row-main { @apply flex min-w-0 flex-col gap-0.5; }
+
+  .gh2-row-title {
+    @apply flex min-w-0 items-baseline gap-1.5 text-row font-medium text-fg-primary;
+  }
+  .gh2-row-title > a {
+    @apply min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-inherit no-underline;
+  }
+  .gh2-row-title > a:hover { @apply text-accent underline; }
+
+  .gh2-row-sub {
+    @apply flex min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap text-sub text-fg-secondary;
+  }
+  .gh2-row-sub > span:first-child { @apply min-w-0 overflow-hidden text-ellipsis; }
+  .gh2-row-sub > span + span::before {
+    content: "·";
+    @apply mr-1.5 text-fg-tertiary;
+  }
+
+  .gh2-row-slot {
+    @apply flex items-center justify-end gap-1 self-center text-meta text-fg-secondary;
+    font-variant-numeric: tabular-nums;
+  }
+  .gh2-row-slot-btn { @apply hidden; }
+  .gh2-row:hover .gh2-row-slot-time { @apply hidden; }
+  .gh2-row:hover .gh2-row-slot-btn { @apply inline-flex; }
+
+  /* 状态胶囊：带底色的语义标签（这版比纯字形更有信息密度） */
+  .gh2-chip {
+    @apply inline-flex shrink-0 items-center gap-1 rounded-[4px] px-1.5 py-px text-[11px] font-medium leading-[15px];
+  }
+  .gh2-chip--ok { background: rgba(26, 127, 55, 0.12); color: var(--dsw-alias-state-success-primary, #1a7f37); }
+  .gh2-chip--bad { background: rgba(207, 34, 46, 0.12); color: var(--dsw-alias-state-error-primary, #cf222e); }
+  .gh2-chip--warn { background: rgba(154, 103, 0, 0.14); color: var(--dsw-alias-state-attention-primary, #9a6700); }
+  .gh2-chip--busy { background: rgba(9, 105, 218, 0.1); color: var(--dsw-alias-state-business-primary, #0969da); }
+  .gh2-chip--idle { background: rgba(0, 0, 0, 0.06); color: var(--dsw-alias-label-secondary, #57606a); }
+  [data-ds-dark-theme] .gh2-chip--ok { background: rgba(63, 185, 80, 0.16); color: #56d364; }
+  [data-ds-dark-theme] .gh2-chip--bad { background: rgba(248, 81, 73, 0.16); color: #ff7b72; }
+  [data-ds-dark-theme] .gh2-chip--warn { background: rgba(210, 153, 34, 0.18); color: #e3b341; }
+  [data-ds-dark-theme] .gh2-chip--busy { background: rgba(88, 166, 255, 0.16); color: #79c0ff; }
+  [data-ds-dark-theme] .gh2-chip--idle { background: rgba(255, 255, 255, 0.1); color: #adbac7; }
+
+  /* 分节头：标题 + 计数 + 右侧动作链接 */
+  .gh2-section-head {
+    @apply mb-1 flex items-center gap-2 px-0.5;
+  }
+  .gh2-section-title {
+    @apply text-sub font-semibold text-fg-secondary;
+  }
+  .gh2-section-count {
+    @apply rounded-[4px] px-1 py-px text-[10px] leading-[14px] text-fg-secondary;
+    background: rgba(0, 0, 0, 0.05);
+  }
+  [data-ds-dark-theme] .gh2-section-count { background: rgba(255, 255, 255, 0.1); }
+
+  /* 空状态：不是虚线框，而是留白 + 一句解释 + 一个动作 */
+  .gh2-empty {
+    @apply flex flex-col items-center gap-1.5 px-2 py-7 text-center text-sub text-fg-secondary;
+  }
+
+  /* 底部快捷操作：小胶囊按钮，弱于内容但可点 */
+  .gh2-quick {
+    @apply mt-1 flex flex-wrap items-center gap-1.5 border-t border-line pt-3;
+  }
+  .gh2-quick-btn {
+    @apply cursor-pointer rounded-chip border border-line bg-transparent px-2 py-1 text-meta text-fg-secondary;
+    transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+  }
+  .gh2-quick-btn:hover {
+    @apply border-accent text-accent;
+    background: rgba(9, 105, 218, 0.06);
+  }
+  [data-ds-dark-theme] .gh2-quick-btn { border-color: rgba(255, 255, 255, 0.12); }
+  [data-ds-dark-theme] .gh2-quick-btn:hover {
+    background: rgba(88, 166, 255, 0.12);
+    color: #79c0ff;
+  }
+
+  /* 调试信息折叠 */
+  .gh2-details {
+    @apply mt-0.5 pl-8;
+  }
+  .gh2-details > summary {
+    @apply cursor-pointer list-none text-meta text-fg-secondary;
+  }
+  .gh2-details > summary::-webkit-details-marker { display: none; }
+  .gh2-details > summary::before { content: "▸ "; }
+  .gh2-details[open] > summary::before { content: "▾ "; }
+  .gh2-details-body {
+    @apply mt-1 flex flex-col gap-0.5 break-all text-meta text-fg-secondary;
+  }
+}

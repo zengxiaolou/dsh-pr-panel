@@ -1,0 +1,5 @@
+# 2026-10-21：项目由 dsh-github-flow 更名为 dsh-pr-panel（单一用途：本会话 PR 通道），
+# 这里的插件 id / name 与 package.json、src/client.ts 的模块 id 保持一致。
+- insert:
+    - id: dsh-pr-panel
+      name: dsh-pr-panel

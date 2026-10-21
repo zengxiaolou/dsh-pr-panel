@@ -1,0 +1,65 @@
+{
+  "name": "dsh-pr-panel",
+  "version": "0.1.0",
+  "icon": "icon.svg",
+  "description": "本会话 PR 浮窗 + 右列审阅面板：把 DeepSeek Harness 里刚提的 PR 常驻在界面上，一眼看到 CI、评审意见与合并状态。",
+  "type": "module",
+  "main": "./lib/main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zengxiaolou/dsh-pr-panel.git"
+  },
+  "homepage": "https://github.com/zengxiaolou/dsh-pr-panel#readme",
+  "bugs": {
+    "url": "https://github.com/zengxiaolou/dsh-pr-panel/issues"
+  },
+  "exports": {
+    ".": "./lib/main.js",
+    "./entry": "./lib/main.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "PROJECT.md",
+    "LICENSE",
+    "docs"
+  ],
+  "scripts": {
+    "build": "node scripts/build-css.mjs && tsc && node scripts/build.mjs",
+    "test": "node test/run-all.mjs",
+    "prepare": "pnpm run build",
+    "build:css": "node scripts/build-css.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "entry": "./lib/client.js"
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "pull-request",
+    "review",
+    "github"
+  ],
+  "author": "DSH Contributor",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@types/node": "^26.6.3",
+    "typescript": "^7.0.2",
+    "tailwindcss": "^3.4.17"
+  }
+}

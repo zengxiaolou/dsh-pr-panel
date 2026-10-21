@@ -1,0 +1,33 @@
+# 测试 CI —— 只跑单元/集成测试，不构建、不发包。
+#
+# 注意：本套测试是封闭的（hermetic）——所有 gh 调用都被桩替换，不需要网络、
+# 不需要 GitHub token、不需要凭证。phase6 在缺少前置条件时会自动 skip，
+# 因此 CI 上出现红色失败 = 真实回归，而不是环境噪音。
+# 另外本仓库没有提交 lockfile，所以 setup-node 的缓存显式关闭。
+
+name: tests
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    name: node test/run-all.mjs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          # 仓库无 lockfile，无法用 setup-node 的依赖缓存
+          cache: ''
+
+      - name: Run full test suite
+        run: node --version && node test/run-all.mjs

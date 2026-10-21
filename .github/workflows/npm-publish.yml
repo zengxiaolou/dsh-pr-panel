@@ -1,0 +1,126 @@
+name: Release & Publish to npm
+
+on:
+  # 1. 标签触发（主流推荐）：当推送符合 v*.*.* 语义化版本标签时触发自动发布 npm 与 GitHub Release
+  push:
+    tags:
+      - 'v*.*.*'
+      - 'v*'
+
+  # 2. 手动调度触发（兜底/调试）：允许在 GitHub 网页 Actions 界面点击按钮一键发包
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '仅预演测试（不真实发布到 npm 与 Release，Dry Run）'
+        required: true
+        type: boolean
+        default: false
+
+concurrency:
+  group: npm-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 赋予创建 GitHub Release 权限
+      id-token: write # 用于 npm 产物 Provenance 签名
+
+    steps:
+      - name: 检出源码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 完整克隆历史以支持自动生成 Release Notes
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.9.0
+
+      - name: 配置 Node.js 与 npm 官方源
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile=false
+
+      - name: 执行全量构建与产物净化
+        run: pnpm run build
+
+      - name: 校验产物完整性
+        run: |
+          test -f lib/index.js || { echo "❌ 缺少 lib/index.js"; exit 1; }
+          test -f lib/client.js || { echo "❌ 缺少 lib/client.js"; exit 1; }
+          echo "✅ 核心产物文件校验通过"
+
+      # 离线安装包：npm pack 产物与 npm 发布包内容同源（同一份 lib/ 构建产物，
+      # 按 package.json files 字段打包），供 Release 页下载后
+      # `dsh plugin add ./xxx.tgz` 免构建直接安装——
+      # 解决 pnpm≥10 Git 安装授权拦截与 npm 镜像 24h 同步滞后两类场景。
+      # dry_run 模式同样执行：顺带验证 files 字段完整性（缺文件时 pack 产物可目检）。
+      - name: 打包离线安装包 (npm pack)
+        run: |
+          pnpm pack
+          TGZ=$(ls dsh-pr-panel-*.tgz)
+          sha256sum "$TGZ" > "$TGZ.sha256"
+          echo "📦 已生成: $TGZ ($(du -h "$TGZ" | cut -f1)) + 校验文件"
+
+      - name: 提取版本号与 Release 标签
+        id: meta
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ -n "${{ github.ref_name }}" ]; then
+            TAG="${{ github.ref_name }}"
+          else
+            TAG="v$VERSION"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: 自动生成 Release 更新日志 (参照 cogninote 规范)
+        id: changelog
+        run: |
+          NOTES_PATH="$RUNNER_TEMP/release-notes.md"
+          node scripts/generate-release-notes.mjs \
+            --version "${{ steps.meta.outputs.version }}" \
+            --releaseTag "${{ steps.meta.outputs.tag }}" \
+            --output "$NOTES_PATH"
+          echo "notes_path=$NOTES_PATH" >> $GITHUB_OUTPUT
+
+      - name: 打印 Release Notes 预览
+        run: |
+          echo "==================== RELEASE NOTES PREVIEW ===================="
+          cat "${{ steps.changelog.outputs.notes_path }}"
+          echo "==============================================================="
+
+      - name: 预演发布 (Dry Run)
+        if: ${{ inputs.dry_run == true }}
+        run: npm publish --access public --dry-run
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: 正式发布至 npm 官方注册表
+        if: ${{ inputs.dry_run != true }}
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: 自动创建并发布 GitHub Release
+        if: ${{ startsWith(github.ref, 'refs/tags/') && inputs.dry_run != true }}
+        uses: softprops/action-gh-release@v2
+        with:
+          name: dsh-pr-panel ${{ steps.meta.outputs.tag }}
+          tag_name: ${{ steps.meta.outputs.tag }}
+          body_path: ${{ steps.changelog.outputs.notes_path }}
+          # 离线安装包与校验文件随 Release 发布（GitHub 自动生成的 Source code
+          # zip/tar.gz 是源码快照不可直接安装；.tgz 是编译产物包）
+          files: |
+            dsh-pr-panel-*.tgz
+            dsh-pr-panel-*.tgz.sha256
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
