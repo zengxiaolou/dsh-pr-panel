@@ -16,6 +16,8 @@ declare function formatRelativeTime(iso: any): string;
  *    diff 复用它已经拉好的 unified patch。
  */
 
+import { Lanes, modeBar, loadGroupMode, saveGroupMode } from './pr-lanes.js';
+
 export const SESSION_PR_CSS = `
 .ghsp-overlay{position:fixed;right:20px;bottom:148px;z-index:900;display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none;font-size:12px}
 .ghsp-overlay>*{pointer-events:auto}
@@ -35,6 +37,28 @@ body:not([data-ds-dark-theme]) .ghsp-card{background:color-mix(in srgb, var(--ds
 .ghsp-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
 .ghsp-icon-btn:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
 .ghsp-list{margin:0;padding:4px;list-style:none;overflow:auto}
+/* 阶段/功能泳道：标题行吸顶，滚动时仍知道自己在哪一段 */
+.ghsp-lanes{overflow:auto;flex:1;min-height:0}
+.ghsp-lane{padding-bottom:2px}
+.ghsp-lane+.ghsp-lane{border-top:1px solid var(--dsw-alias-border-l2)}
+.ghsp-lane-head{display:flex;align-items:center;gap:6px;padding:7px 10px 3px;position:sticky;top:0;background:color-mix(in srgb, var(--dsw-alias-bg-base) 94%, #000 6%);z-index:1}
+body:not([data-ds-dark-theme]) .ghsp-lane-head{background:color-mix(in srgb, var(--dsw-alias-bg-base) 96%, #fff 4%)}
+.ghsp-lane-chip{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:1px 6px;border-radius:999px;border:1px solid currentColor;line-height:1.5}
+.ghsp-lane-chip.dev{color:var(--dsw-alias-brand-primary,#2f81f7)}
+.ghsp-lane-chip.test{color:var(--dsw-alias-state-warn-primary,#9a6700)}
+.ghsp-lane-chip.release{color:var(--dsw-alias-state-info-primary,#8250df)}
+.ghsp-lane-chip.prod{color:var(--dsw-alias-state-success-primary,#1a7f37)}
+.ghsp-lane-chip.other{color:var(--dsw-alias-label-secondary,#656d76)}
+.ghsp-lane-count{font-size:10px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.ghsp-lane-name{flex:1;min-width:0;font-size:11px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghsp-lane-chevron{font-size:9px;line-height:1;width:9px;flex:0 0 auto;color:var(--dsw-alias-label-secondary)}
+.ghsp-lane-toggle{width:100%;border:0;background:transparent;font:inherit;text-align:left;cursor:pointer}
+.ghsp-lane-toggle:hover .ghsp-lane-name,.ghsp-lane-toggle:hover .ghsp-lane-count{color:var(--dsw-alias-label-primary)}
+.ghsp-lane.collapsed .ghsp-lane-head{padding-bottom:5px}
+.ghsp-mode-bar{display:flex;align-items:center;gap:4px;padding:6px 10px 2px}
+.ghsp-mode-btn{padding:1px 8px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2);background:transparent;color:var(--dsw-alias-label-secondary);font-size:10px;line-height:1.7;cursor:pointer}
+.ghsp-mode-btn:hover{color:var(--dsw-alias-label-primary)}
+.ghsp-mode-btn.active{border-color:var(--dsw-alias-brand-primary,#2f81f7);color:var(--dsw-alias-brand-primary,#2f81f7);background:rgba(47,129,247,.1)}
 .ghsp-row{display:flex;flex-direction:column;gap:4px;width:100%;padding:8px 9px;border-radius:8px;border:0;background:transparent;text-align:left;cursor:pointer;color:inherit}
 .ghsp-row:hover{background:var(--dsw-alias-bg-layer-2)}
 .ghsp-row-top{display:flex;align-items:center;gap:6px;min-width:0}
@@ -56,7 +80,7 @@ body:not([data-ds-dark-theme]) .ghsp-card{background:color-mix(in srgb, var(--ds
 .ghsp-badge.closed{color:var(--dsw-alias-state-error-primary,#f85149);border-color:color-mix(in srgb, var(--dsw-alias-state-error-primary,#f85149) 40%, transparent);background:color-mix(in srgb, var(--dsw-alias-state-error-primary,#f85149) 10%, transparent)}
 .ghsp-badge.unknown{color:var(--dsw-alias-label-secondary);border-color:var(--dsw-alias-border-l2)}
 
-.ghsp-panel{display:flex;flex-direction:column;height:100%;min-height:0;font-size:12px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base)}
+.ghsp-panel{display:flex;flex-direction:column;height:100%;min-height:0;font-size:12px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);border-top-left-radius:12px;border-top-right-radius:12px;overflow:hidden}
 .ghsp-head{flex:0 0 auto;padding:10px 12px 9px;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}
 .ghsp-head-top{display:flex;align-items:center;gap:8px;min-width:0}
 .ghsp-repo{font-size:11px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -634,6 +658,12 @@ function SessionPrOverlayInner(props: any) {
   var state = pair[0];
   var refresh = pair[1];
   var [open, setOpen] = React.useState(false);
+  // 阶段 / 功能 两种分组视角；持久化到 localStorage，浮窗与面板共用同一个键
+  var [groupMode, setGroupMode] = React.useState(loadGroupMode);
+  var changeGroupMode = function (next: string) {
+    saveGroupMode(next);
+    setGroupMode(next === "feature" ? "feature" : "stage");
+  };
   // 右键菜单：{x, y, item}；同时用一个短 toast 反馈「已复制」
   var [menu, setMenu] = React.useState(null as any);
   var [hint, setHint] = React.useState(null as any);
@@ -786,6 +816,52 @@ function SessionPrOverlayInner(props: any) {
 
   var headline = items[0];
   var total = items.length;
+
+  // 首帧 lite 只回了编号：这时按阶段切段会先冒出假的 Other 段，先平铺
+  var pendingOnly = items.every(function (it: any) { return it.pending; });
+
+  var overlayRow = function (item: any) {
+    var rowKey = prStateKey(item);
+    var checks = item.checks || { state: "none" };
+    return React.createElement(
+      "li",
+      { key: item.repo + "#" + item.number },
+      React.createElement(
+        "button",
+        {
+          type: "button",
+          className: "ghsp-row",
+          onClick: function () {
+            if (props.onOpenPr) props.onOpenPr({ repo: item.repo, number: item.number });
+          },
+          onContextMenu: function (ev: any) {
+            if (ev && ev.preventDefault) ev.preventDefault();
+            var x = (ev && (ev.clientX || 0)) || 0;
+            var y = (ev && (ev.clientY || 0)) || 0;
+            setMenu({ x: x, y: y, item: item });
+          },
+        },
+        // 两行：第一行只放编号 + 标题 + 状态，第二行放目标分支、仓库、来源、CI
+        React.createElement(
+          "div",
+          { className: "ghsp-row-top" },
+          React.createElement("span", { className: "ghsp-row-num" }, "#" + item.number),
+          React.createElement("span", { className: "ghsp-row-title" }, item.pending ? "读取中…" : (item.title || "")),
+          item.pending ? null : React.createElement("span", { className: "ghsp-badge " + (item.missing ? "unknown" : rowKey) }, item.missing ? "?" : prStateLabel(rowKey))
+        ),
+        React.createElement(
+          "div",
+          { className: "ghsp-row-meta" },
+          item.pending ? null : React.createElement(TargetTag, { base: item.baseRefName }),
+          React.createElement("span", { className: "ghsp-row-repo", title: item.repo }, item.repo),
+          renderOriginTag(item),
+          item.pending
+            ? React.createElement("span", { className: "ghsp-inline-loading" }, React.createElement("span", { className: "ghsp-spinner" }))
+            : React.createElement("span", { className: "ghsp-dot " + (item.missing ? "none" : checks.state), title: "检查状态" })
+        )
+      )
+    );
+  };
   // 整棵树里有没有子代理建的 PR：只用来改提示语，不改变行本身的渲染
   var hasSubagentPr = items.some(function (i: any) { return i && i.origin === "subagent"; });
 
@@ -888,52 +964,13 @@ function SessionPrOverlayInner(props: any) {
             }, "跳转 GitHub"))
         : null,
       hint ? React.createElement("div", { className: "ghsp-hint" }, hint) : null,
-      React.createElement(
-        "ul",
-        { className: "ghsp-list" },
-        items.map(function (item: any) {
-          var key = prStateKey(item);
-          var checks = item.checks || { state: "none" };
-          return React.createElement(
-            "li",
-            { key: item.repo + "#" + item.number },
-            React.createElement(
-              "button",
-              {
-                type: "button",
-                className: "ghsp-row",
-                onClick: function () {
-                  if (props.onOpenPr) props.onOpenPr({ repo: item.repo, number: item.number });
-                },
-                onContextMenu: function (ev: any) {
-                  if (ev && ev.preventDefault) ev.preventDefault();
-                  var x = (ev && (ev.clientX || 0)) || 0;
-                  var y = (ev && (ev.clientY || 0)) || 0;
-                  setMenu({ x: x, y: y, item: item });
-                },
-              },
-              // 两行：第一行只放编号 + 标题 + 状态（标题吃满宽度），第二行放目标分支、仓库、CI
-              React.createElement(
-                "div",
-                { className: "ghsp-row-top" },
-                React.createElement("span", { className: "ghsp-row-num" }, "#" + item.number),
-                React.createElement("span", { className: "ghsp-row-title" }, item.pending ? "读取中…" : (item.title || "")),
-                item.pending ? null : React.createElement("span", { className: "ghsp-badge " + (item.missing ? "unknown" : key) }, item.missing ? "?" : prStateLabel(key))
-              ),
-              React.createElement(
-                "div",
-                { className: "ghsp-row-meta" },
-                item.pending ? null : React.createElement(TargetTag, { base: item.baseRefName }),
-                React.createElement("span", { className: "ghsp-row-repo", title: item.repo }, item.repo),
-                renderOriginTag(item),
-                item.pending
-                  ? React.createElement("span", { className: "ghsp-inline-loading" }, React.createElement("span", { className: "ghsp-spinner" }))
-                  : React.createElement("span", { className: "ghsp-dot " + (item.missing ? "none" : checks.state), title: "检查状态" })
-              )
-            )
-          );
-        })
-      )
+      // 泳道而不是平铺：Dev→Test→Release→Prod 从上到下就是功能推进的方向。
+      // 首帧 lite 只有编号（还没有 stage），先平铺，数据齐了再分段，避免闪一个假的 Other 段。
+      pendingOnly
+        ? React.createElement("ul", { className: "ghsp-list" }, items.map(overlayRow))
+        : React.createElement("div", null,
+            modeBar(groupMode, changeGroupMode),
+            React.createElement(Lanes, { items: items, mode: groupMode, rowFn: overlayRow }))
     )
   );
 }
@@ -1364,6 +1401,12 @@ function SessionPrPanelBody(props: any) {
   var list = pair[0];
 
   var initialNumber = Number(params.number) || null;
+  // 与浮窗共用同一个持久化键：在浮窗里切到「功能」，面板里也是「功能」
+  var [groupMode, setGroupMode] = React.useState(loadGroupMode);
+  var changeGroupMode = function (next: string) {
+    saveGroupMode(next);
+    setGroupMode(next === "feature" ? "feature" : "stage");
+  };
   var [selected, setSelected] = React.useState(initialNumber);
   var [selectedRepo, setSelectedRepo] = React.useState((params.repo as string) || null);
   var [lineSel, setLineSel] = React.useState(null as any);
@@ -1774,8 +1817,10 @@ function SessionPrPanelBody(props: any) {
                       ? "用 github_pr 创建 PR 后这里会出现；主会话派下去的子代理会话建的 PR 也会收进来（带「子代理」小标）。"
                       : "它可能是上次启动恢复的旧标签：请从右下角浮窗重新打开，或直接刷新页面。"),
                     React.createElement("span", { className: "ghsp-muted" }, "session: " + (sessionId || "（无）")))))
-        : React.createElement("ul", { className: "ghsp-list", style: { padding: "6px" } },
-            items.map(function (item: any) {
+        : (function () {
+            // 与浮窗同一条规则：lite 首帧还没有阶段，先平铺
+            var pendingOnly = items.every(function (it: any) { return it.pending; });
+            var panelRow = function (item: any) {
               var missing = Boolean(item.missing);
               var pending = Boolean(item.pending);
               var stats = React.createElement("span", null,
@@ -1793,7 +1838,14 @@ function SessionPrPanelBody(props: any) {
                     renderOriginTag(item),
                     pending ? React.createElement("span", { className: "ghsp-inline-loading" }, React.createElement("span", { className: "ghsp-spinner" }), "读取中…")
                       : (missing ? React.createElement("span", null, "元数据暂不可用（gh 未登录或超时）") : stats))));
-            }))
+            };
+            if (pendingOnly) {
+              return React.createElement("ul", { className: "ghsp-list", style: { padding: "6px" } }, items.map(panelRow));
+            }
+            return React.createElement("div", null,
+              modeBar(groupMode, changeGroupMode),
+              React.createElement(Lanes, { items: items, mode: groupMode, rowFn: panelRow }));
+          })()
     );
   }
 

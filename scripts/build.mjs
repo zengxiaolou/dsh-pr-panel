@@ -50,7 +50,7 @@ function bundleClient() {
   // 而调用处只会得到 undefined —— 运行期表现为「面板一片空白」，非常难查。
   // 所以在这里静态清点一次，构建时就吼出来。
   const knownModules = new Set([
-    'utils.js', 'icons.js', 'markdown-lite.js', 'session-pr-panel.js',
+    'utils.js', 'icons.js', 'markdown-lite.js', 'pr-lanes.js', 'session-pr-panel.js',
     'tw.generated.js',
   ]);
 
@@ -83,6 +83,7 @@ function bundleClient() {
     'utils.js',
     'icons.js',
     'markdown-lite.js',
+    'pr-lanes.js',
     'session-pr-panel.js',
   ];
 

@@ -16,6 +16,7 @@ import { listSessionCreatedPrs } from '../session-pr-tracker.js';
 import { readSessionCreatedPrs } from '../session-pr-scan.js';
 import { listSessionDescendants } from '../session-lineage.js';
 import { githubGraphql, githubGet } from '../github-http.js';
+import { resolvePipelineStage, sortPrsByStage, PIPELINE_STAGES } from '../pipeline-stage.js';
 
 /**
  * 把 gh 的原始报错翻成「用户能照着做」的一句话。
@@ -1145,6 +1146,15 @@ export function registerActionRoutes(
           createdAt: meta?.createdAt || '',
           updatedAt: meta?.updatedAt || '',
           mergedAt: meta?.mergedAt || '',
+          // 流水线阶段：Dev → Test → Release → Prod（按目标分支/label 判定）
+          ...(function () {
+            const stage = resolvePipelineStage({
+              baseRefName: meta?.baseRefName || '',
+              headRefName: meta?.headRefName || '',
+              labels: meta?.labels,
+            });
+            return { stage, stageId: stage.id };
+          })(),
           checks: summarizeCheckRollup(meta?.statusCheckRollup) && meta?.statusCheckRollup
             ? summarizeCheckRollup(meta.statusCheckRollup)
             : checksFromGraphqlState(meta?.statusCheckRollupState),
@@ -1278,20 +1288,24 @@ export function registerActionRoutes(
           return rememberItem(ref, buildItem(ref, meta));
         });
 
+        // 排序在 Host 做：浮窗、面板、快照三处消费同一份数据，排一次就都对了
+        const ordered = sortPrsByStage(items);
+
         sendJson(res, 200, {
           ok: true,
           data: {
             sessionId,
             transcript: scanned.transcript ? path.basename(path.dirname(scanned.transcript)) : null,
             reason: scanned.reason,
-            total: items.length,
+            total: ordered.length,
+            stages: PIPELINE_STAGES.map((x) => ({ id: x.id, label: x.label, labelZh: x.labelZh, order: x.order })),
             // 子代理会话数：0 表示这棵树只有主会话（旧口径行为），>0 时列表里可能混有 origin=subagent 的行
             descendants: descendants.length,
-            items,
+            items: ordered,
           },
         });
         if (!lite && items.length > 0 && items.every((i: any) => !i.pending)) {
-          saveSessionSnapshot(sessionId, items, lineageSignature);
+          saveSessionSnapshot(sessionId, ordered, lineageSignature);
         }
       } catch (err: any) {
         sendJson(res, 500, { ok: false, error: err?.message || '读取本会话 PR 失败' });
