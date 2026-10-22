@@ -329,6 +329,8 @@ const routesCi = fs.readFileSync(path.join(dirname, '../lib/api/routes-actions.j
 ok(routesCi.includes('/api/github/pr-runs'), '路由已注册 PR 运行接口');
 ok(/actions\/runs\?branch=/.test(routesCi), '按分支过滤运行（head 与 base）');
 ok(client.includes('宿主还没重启'), '宿主版本落后时给出可行动的提示，而不是抛 404');
+ok(client.includes('React.useState("rebase")'), '合并方式默认 rebase');
+ok(client.includes('var allowed = ["squash", "merge", "rebase"]'), '仓库不允许 rebase 时仍会回退到可用项');
 ok(client.includes('ghsp-note-warn'), '提示条有独立样式（不占据内容区）');
 
 console.log('\n━━━━━━━━━ phase45 汇总 ━━━━━━━━━');
