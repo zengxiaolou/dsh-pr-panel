@@ -277,4 +277,51 @@ export function parseGitStatText(statText: string): GitStatParsedResult | null {
   return { files, summary };
 }
 
-
+/**
+ * 解析 `git worktree list --porcelain`。
+ *
+ * 输出是按块分组的键值行，空行分隔：
+ *   worktree /path/to/wt
+ *   HEAD <sha>
+ *   branch refs/heads/feat/x      （detached 时没有 branch 行）
+ *   bare / locked / prunable      （可有可无）
+ */
+export function parseGitWorktreeList(raw: string): Array<{
+  path: string;
+  branch: string;
+  head: string;
+  bare: boolean;
+  detached: boolean;
+  locked: boolean;
+  prunable: boolean;
+}> {
+  const out: Array<{ path: string; branch: string; head: string; bare: boolean; detached: boolean; locked: boolean; prunable: boolean }> = [];
+  let current: any = null;
+  const flush = () => {
+    if (current && current.path) {
+      out.push({
+        path: current.path,
+        branch: current.branch ? String(current.branch).replace(/^refs\/heads\//, '') : '',
+        head: current.head || '',
+        bare: Boolean(current.bare),
+        detached: Boolean(current.detached),
+        locked: Boolean(current.locked),
+        prunable: Boolean(current.prunable),
+      });
+    }
+    current = null;
+  };
+  for (const line of String(raw || '').split('\n')) {
+    if (!line.trim()) { flush(); continue; }
+    if (line.startsWith('worktree ')) { flush(); current = { path: line.slice(9).trim() }; continue; }
+    if (!current) continue;
+    if (line.startsWith('HEAD ')) current.head = line.slice(5).trim();
+    else if (line.startsWith('branch ')) current.branch = line.slice(7).trim();
+    else if (line === 'bare') current.bare = true;
+    else if (line === 'detached') current.detached = true;
+    else if (line === 'locked' || line.startsWith('locked ')) current.locked = true;
+    else if (line === 'prunable' || line.startsWith('prunable ')) current.prunable = true;
+  }
+  flush();
+  return out;
+}

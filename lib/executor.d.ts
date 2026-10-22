@@ -218,6 +218,21 @@ export declare class GhExecutor {
      */
     getGitBranches(cwd?: string): Promise<GitBranchesResult | null>;
     /**
+     * 列出该仓库的 git worktree（`git worktree list --porcelain`）。
+     *
+     * 为什么需要：多 worktree 开发时，最常犯的错是在错的 worktree 里改文件。
+     * 只读命令、固定参数、4s 超时——与 getGitBranches 同一套纪律，不接受任何外部拼接。
+     */
+    getGitWorktrees(cwd?: string): Promise<Array<{
+        path: string;
+        branch: string;
+        head: string;
+        bare: boolean;
+        detached: boolean;
+        locked: boolean;
+        prunable: boolean;
+    }> | null>;
+    /**
      * 安全切换当前工作区的 Git 分支。
      * 三重安全防御纪律：
      * 1. 目标工作区必须存在有效的 .git 目录；

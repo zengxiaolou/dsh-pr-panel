@@ -55,3 +55,21 @@ export interface GitStatParsedResult {
  * 提取文件路径与 `X files changed, Y insertions(+), Z deletions(-)` 汇总。
  */
 export declare function parseGitStatText(statText: string): GitStatParsedResult | null;
+/**
+ * 解析 `git worktree list --porcelain`。
+ *
+ * 输出是按块分组的键值行，空行分隔：
+ *   worktree /path/to/wt
+ *   HEAD <sha>
+ *   branch refs/heads/feat/x      （detached 时没有 branch 行）
+ *   bare / locked / prunable      （可有可无）
+ */
+export declare function parseGitWorktreeList(raw: string): Array<{
+    path: string;
+    branch: string;
+    head: string;
+    bare: boolean;
+    detached: boolean;
+    locked: boolean;
+    prunable: boolean;
+}>;

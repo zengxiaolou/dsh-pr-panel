@@ -199,6 +199,32 @@ eq(ciWorkflowLine({ name: 'D', latest: { status: 'queued' } }).text, '排队中'
 eq(ciWorkflowLine({ name: 'E', latest: { status: 'completed', conclusion: 'cancelled', completedAt: ago(3) } }).text, '已取消 · 3m 前', '取消态');
 ok(ciWorkflowLine({ name: 'C', latest: { status: 'completed', conclusion: 'failure' } }).tone === 'fail', '失败态 tone=fail（渲染层据此上色）');
 
+console.log('\n--- 4.8 项目 / worktree 解析 ---');
+const { parseGitWorktreeList } = await import('../lib/executor/git-parser.js');
+const wtRaw = [
+  'worktree /Users/ruler/Documents/work/dsh-github-flow',
+  'HEAD 6d177e6abc',
+  'branch refs/heads/local/aggregate-root',
+  '',
+  'worktree /private/tmp/dsh-pub2',
+  'HEAD 4c7a7fabcd',
+  'branch refs/heads/tmp/pub2',
+  'prunable gitdir file points to non-existent location',
+  '',
+].join('\n');
+const wts = parseGitWorktreeList(wtRaw);
+eq(wts.length, 2, '解析出 2 个 worktree');
+eq(wts[0].branch, 'local/aggregate-root', 'branch 去掉 refs/heads/ 前缀');
+eq(wts[0].prunable, false, '普通 worktree 不是 prunable');
+eq(wts[1].prunable, true, '识别 prunable（陈旧、目录已不存在）');
+eq(wts[1].head.slice(0, 7), '4c7a7fa', 'head 截断由上层做，解析层保留原值');
+const detached = parseGitWorktreeList(['worktree /tmp/det', 'HEAD deadbeef', 'detached', ''].join('\n'));
+eq(detached[0].detached, true, 'detached 识别');
+eq(detached[0].branch, '', 'detached 没有 branch');
+const locked = parseGitWorktreeList(['worktree /tmp/lk', 'HEAD abc', 'branch refs/heads/x', 'locked', ''].join('\n'));
+eq(locked[0].locked, true, 'locked 识别');
+eq(parseGitWorktreeList('').length, 0, '空输入不炸');
+
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
 ok(client.includes('// ---- [Bundled: pr-lanes.js] ----'), 'pr-lanes 已打进 bundle');
@@ -210,6 +236,9 @@ ok(/\.ghsp-card\{[^}]*backdrop-filter/.test(client), '浮窗卡片带背景模�
 ok(/\.ghsp-pill\{[^}]*background:var\(--dsw-specific-menu/.test(client), '浮窗药丸同样跟随透明');
 ok(client.includes('function CiPipelineStrip'), '浮窗里有 CI/CD 紧凑条组件');
 ok(client.includes('.ghsp-ci-head'), '紧凑条样式已打包');
+ok(client.includes('function WorkspaceBlock'), '浮窗里有「项目 / worktree」区块');
+ok(client.includes('.ghsp-ws-row.current'), '当前 worktree 有高亮样式');
+ok(client.includes('/api/github/workspace-info'), '区块走工作区信息接口');
 ok(client.includes('/api/github/ci-pipeline'), '紧凑条走仓库级流水线接口');
 ok(client.includes('prefers-reduced-transparency'), '系统减弱透明度时有回退（与宿主一致）');
 ok(!/body:not\(\[data-ds-dark-theme\]\) \.ghsp-card\{background:color-mix/.test(client), '不再有覆盖成不透明底色的浅色规则');
