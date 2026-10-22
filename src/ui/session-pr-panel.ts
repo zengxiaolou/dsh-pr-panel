@@ -65,6 +65,9 @@ export const SESSION_PR_CSS = `
 .ghsp-ocards{display:flex;flex-direction:column;gap:6px;padding:6px 8px 8px;overflow:auto;flex:1;min-height:0}
 .ghsp-ocards-sum{font-size:10px;color:var(--dsw-alias-label-secondary);padding:0 2px}
 .ghsp-oscard{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:6px 8px;background:var(--dsw-alias-bg-layer-1)}
+.ghsp-oscard-link{width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer}
+.ghsp-oscard-link:hover{border-color:var(--dsw-alias-brand-primary,#2f81f7);background:var(--dsw-alias-bg-layer-2)}
+.ghsp-oscard-go{flex:0 0 auto;font-size:10px;color:var(--dsw-alias-label-secondary)}
 .ghsp-oscard-head{display:flex;align-items:center;gap:6px;min-width:0}
 .ghsp-oscard-title{flex:1;min-width:0;font-size:12px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ghsp-oscard-sub{flex:0 0 auto;font-size:10px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:52%}
@@ -1100,11 +1103,24 @@ function CiPipelineStrip(props: any) {
     workflows.map(function (wf: any) {
       var line = ciWorkflowLine(wf);
       var active = wf.latest && wf.latest.active;
-      return React.createElement("div", { key: String(wf.id || wf.name), className: "ghsp-oscard" },
+      var runUrl = String((wf.latest && wf.latest.url) || "");
+      var openRun = function () {
+        if (!runUrl) return;
+        if (props && typeof props.onOpenUrl === "function") props.onOpenUrl(runUrl);
+        else { try { window.open(runUrl, "_blank", "noopener,noreferrer"); } catch (e) { /* 忽略 */ } }
+      };
+      return React.createElement(runUrl ? "button" : "div", {
+        key: String(wf.id || wf.name),
+        type: runUrl ? "button" : undefined,
+        className: "ghsp-oscard" + (runUrl ? " ghsp-oscard-link" : ""),
+        title: (line.title || wf.name || "") + (runUrl ? "\n点击在 GitHub 打开这次运行" : ""),
+        onClick: runUrl ? openRun : undefined,
+      },
         React.createElement("div", { className: "ghsp-oscard-head" },
           React.createElement("span", { className: "ghsp-dot " + (line.tone === 'fail' ? 'fail' : line.tone === 'pending' ? 'pending' : line.tone === 'none' ? 'none' : 'pass') }),
           React.createElement("span", { className: "ghsp-oscard-title", title: line.title }, String(wf.name || "workflow")),
-          React.createElement("span", { className: "ghsp-oscard-sub" }, line.text)),
+          React.createElement("span", { className: "ghsp-oscard-sub" }, line.text),
+          runUrl ? React.createElement("span", { className: "ghsp-oscard-go", "aria-hidden": "true" }, "↗") : null),
         active
           ? React.createElement("div", { className: "ghsp-bar-wrap" },
               React.createElement("div", { className: "ghsp-bar-fill", style: { width: Math.round((Number(active.ratio) || 0) * 100) + "%" } }))
@@ -1469,7 +1485,7 @@ function SessionPrOverlayInner(props: any) {
               .filter(function (r: string, i: number, arr: string[]) { return r && arr.indexOf(r) === i; }),
           })
         : (overlayTab === "ci"
-          ? React.createElement(CiPipelineStrip, { repo: items[0] && items[0].repo })
+          ? React.createElement(CiPipelineStrip, { repo: items[0] && items[0].repo, onOpenUrl: props.onOpenUrl })
           : null),
       // 泳道而不是平铺：Dev→Test→Release→Prod 从上到下就是功能推进的方向。
       // 首帧 lite 只有编号（还没有 stage），先平铺，数据齐了再分段，避免闪一个假的 Other 段。

@@ -252,6 +252,9 @@ ok(client.includes('function overlayTabBar'), '浮窗有 tab 切换（功能 / �
 ok(client.includes('.ghsp-otab.active'), 'tab 选中样式已打包');
 ok(client.includes('.ghsp-oscard'), '每块一张卡片：卡片样式已打包');
 ok((client.match(/overlayTab === "project"/g) || []).length > 0, 'tab 切换会按需渲染项目视图');
+ok(client.includes('ghsp-oscard-link'), 'CI/CD 卡片可点击（有可点样式）');
+ok(client.includes('点击在 GitHub 打开这次运行'), '卡片 tooltip 说明点击去向');
+ok(client.includes('props.onOpenUrl'), '点击走宿主提供的打开逻辑（内部浏览器），不是硬 window.open');
 ok(client.includes('.ghsp-ws-row.current'), '当前 worktree 有高亮样式');
 ok(client.includes('/api/github/workspace-info'), '区块走工作区信息接口');
 ok(client.includes('readJsonSafe'), '非 JSON 响应会被翻译成可行动的提示（不是解析报错）');
