@@ -43,36 +43,61 @@ export function groupItemsByStage(items: any[]) {
  * ------------------------------------------------------------------ */
 
 /** 功能键：head 分支名；拿不到时退化成 repo#number，保证每组唯一 */
-/**
- * 版本号提取：`release_v1.0.79` / `sync/release-0.1.49-...` / `回填 v1.0.67 的 13 个提交`
- * 都归到 `v1.0.67` 这种键上。
+
+/* ------------------------------------------------------------------ *
+ * 功能归组：同一条链 = 同一个功能分支被合入不同目标分支
  *
- * 为什么要它：同一个变更往往会以不同的 head 名在多个分支上来回搬
- * （`fix/backfill-v1.0.67-into-v1.0.68` → `sync/release-v1.0.67-backfill-to-main`），
- * 按 head 归组会把一个功能的 2–3 个 PR 拆成 2–3 条泳道，等于没分组。
- * 这批 PR 共有的稳定信号是版本号，因此优先按版本聚合；没有版本号时才退回 head。
- */
-function versionKeyOf(item: any) {
-  var fields = [item && item.headRefName, item && item.baseRefName, item && item.title];
-  for (var i = 0; i < fields.length; i += 1) {
-    var m = String(fields[i] || "").match(/(?:^|[^\d.])v?(\d+\.\d+\.\d+)/i);
-    if (m) return "v" + m[1];
-  }
-  return "";
+ * 现实约束（实测 12 条真实 PR 得出）：同一条链的 head 名一定不同。
+ *   fix/ci-new-branch-base
+ *   sync/release-v1.0.80-ci-new-branch-base-20261022
+ *   fix/backfill-v1.0.67-into-v1.0.68
+ *   sync/release-v1.0.67-backfill-to-main-20261022
+ * 提交信息也不共享（同步时的 commit 是重写的），标题同样被改写。
+ * 所以只能靠**分支名结构**判断，两条规则：
+ *   a) 包含关系：派生分支名里嵌了源分支名（sync/…-ci-new-branch-base-20261022 ⊃ ci-new-branch-base）
+ *   b) 同版本 + 共享主题词：名字被改写、互不包含时（backfill-v1.0.67-into-… vs release-v1.0.67-backfill-…）
+ * 用并查集把满足任一关系的连起来；组名取组内最短且够长的 slug（通常就是源功能分支）。
+ * ------------------------------------------------------------------ */
+
+const FEATURE_NOISE_TOKENS = new Set([
+  'release', 'rel', 'sync', 'to', 'into', 'from', 'main', 'master',
+  'dev', 'develop', 'test', 'qa', 'staging', 'merge', 'branch',
+]);
+
+/** 分支名归一：去类型前缀、去尾部日期、下划线转连字符 */
+export function normalizeBranchSlug(head: any): string {
+  var s = String(head == null ? '' : head).toLowerCase().replace(/_/g, '-');
+  s = s.replace(/^(fix|feat|feature|chore|hotfix|bugfix|sync|rel|release)\//, '');
+  s = s.replace(/-?\d{8}$/, '');
+  return s.replace(/-{2,}/g, '-').replace(/^-|-$/g, '');
 }
 
-function featureKeyOf(item: any) {
-  var ver = versionKeyOf(item);
-  if (ver) return ver;
-  var head = String((item && item.headRefName) || "").trim();
-  if (head) return head;
-  return String((item && item.repo) || "") + "#" + String((item && item.number) || "");
+function versionTokensOf(slug: string): string[] {
+  var out: string[] = [];
+  var re = /v?(\d+\.\d+\.\d+)/g;
+  var m: RegExpExecArray | null;
+  while ((m = re.exec(slug)) !== null) out.push(m[1]);
+  return out;
 }
 
-/** 泳道标签：版本键原样展示，head 键做长度截断 */
-function featureLabelOf(key: string) {
-  if (/^v\d+\.\d+\.\d+$/.test(key)) return key;
-  return shortFeatureName(key);
+function topicTokensOf(slug: string): string[] {
+  return slug.split(/[-/]/).filter(function (t) {
+    return t.length >= 4 && !FEATURE_NOISE_TOKENS.has(t) && !/^v?\d/.test(t);
+  });
+}
+
+/** 两个分支名是否属于同一条链 */
+function sameChain(a: any, b: any): boolean {
+  // 完全同名（含短名，如 feat/login → login）一定是同一条链
+  if (a.slug && a.slug === b.slug) return true;
+  var shortSlug = a.slug.length <= b.slug.length ? a.slug : b.slug;
+  var longSlug = a.slug.length <= b.slug.length ? b.slug : a.slug;
+  // a) 包含关系（slug 太短容易误连，比如 ci）
+  if (shortSlug.length >= 6 && longSlug.indexOf(shortSlug) >= 0) return true;
+  // b) 同版本 + 共享主题词
+  var sharedVersion = a.versions.some(function (v: string) { return b.versions.indexOf(v) >= 0; });
+  if (!sharedVersion) return false;
+  return a.topics.some(function (t: string) { return b.topics.indexOf(t) >= 0; });
 }
 
 /** 「推进度」：other 的 order=99 是排序哨兵，不能当进度用 */
@@ -83,21 +108,54 @@ function advanceRank(stage: any) {
 }
 
 export function groupItemsByFeature(items: any[]) {
-  var order: string[] = [];
-  var map: any = {};
-  (items || []).forEach(function (it: any) {
-    var key = featureKeyOf(it);
-    var group = map[key];
-    if (!group) {
-      group = { key: key, items: [], furthest: null, done: true };
-      map[key] = group;
-      order.push(key);
-    }
-    group.items.push(it);
-    if (advanceRank(it && it.stage) > advanceRank(group.furthest)) group.furthest = it.stage || null;
-    if (!(it && it.mergedAt) && String((it && it.state) || "").toUpperCase() !== "CLOSED") group.done = false;
+  var list = (items || []).map(function (it: any) {
+    var slug = normalizeBranchSlug(it && it.headRefName);
+    return {
+      item: it,
+      slug: slug,
+      versions: versionTokensOf(slug),
+      topics: topicTokensOf(slug),
+      key: slug || String((it && it.repo) || '') + '#' + String((it && it.number) || ''),
+    };
   });
-  var out = order.map(function (k) { return map[k]; });
+
+  // 并查集：只有真正同链的才连
+  var parent: number[] = list.map(function (_, i) { return i; });
+  function find(x: number): number { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+  function union(a: number, b: number) { var ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
+  for (var i = 0; i < list.length; i += 1) {
+    for (var j = i + 1; j < list.length; j += 1) {
+      if (sameChain(list[i], list[j])) union(i, j);
+    }
+  }
+
+  var buckets: any = {};
+  var order: number[] = [];
+  list.forEach(function (row, idx) {
+    var root = find(idx);
+    if (!buckets[root]) { buckets[root] = []; order.push(root); }
+    buckets[root].push(row);
+  });
+
+  var out = order.map(function (root) {
+    var rows = buckets[root];
+    var slugs = rows.map(function (r: any) { return r.slug; }).filter(Boolean).sort(function (a: string, b: string) { return a.length - b.length; });
+    // 组名取「最短且够长」的 slug：太短的（v1.0.79、ci）不适合当标签
+    var key = slugs.filter(function (k: string) { return k.length >= 8; })[0] || slugs[0] || rows[0].key;
+    var label = "";
+    for (var r = 0; r < rows.length; r += 1) {
+      if (rows[r].slug === key) { label = String(rows[r].item && rows[r].item.headRefName || "").trim(); break; }
+    }
+    var furthest: any = null;
+    var done = true;
+    var itemsInGroup = rows.map(function (r: any) { return r.item; });
+    itemsInGroup.forEach(function (it: any) {
+      if (advanceRank(it && it.stage) > advanceRank(furthest)) furthest = it.stage || null;
+      if (!(it && it.mergedAt) && String((it && it.state) || '').toUpperCase() !== 'CLOSED') done = false;
+    });
+    return { key: key, label: label || key, items: itemsInGroup, furthest: furthest, done: done };
+  });
+
   // 未完成的在前；再按走得最远的阶段升序（Dev 在前），与阶段泳道同向
   out.sort(function (a: any, b: any) {
     if (a.done !== b.done) return a.done ? 1 : -1;
@@ -106,10 +164,16 @@ export function groupItemsByFeature(items: any[]) {
   return out;
 }
 
+
 /** 分支名太长会吃掉整行，保留前缀 + 省略 */
 function shortFeatureName(key: string) {
   return key.length > 26 ? key.slice(0, 25) + "…" : key;
 }
+/** 泳道标签：slug 过长时截断（组名本身已经是「最短且够长」的那条） */
+export function featureLabelOf(key: string) {
+  return shortFeatureName(key);
+}
+
 
 /**
  * 统一成「泳道描述」：两种模式给同一形状，渲染层只写一份。
@@ -124,7 +188,7 @@ export function buildLanes(items: any[], mode: string) {
         key: "f:" + g.key,
         id: (st && st.id) || "other",
         chip: st ? st.label : "",
-        name: featureLabelOf(g.key),
+        name: featureLabelOf(g.label || g.key),
         count: g.items.length,
         title: g.items.length + " 个 PR · 最远走到 " + (st ? st.label : "未归类") + (g.done ? " · 已全部合并" : "")
           + (g.items.length > 1 ? "\n同一版本/变更集在各分支上的 PR 收在此组" : ""),

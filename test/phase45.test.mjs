@@ -59,8 +59,8 @@ const feats = groupPrsByFeature([
   { number: 12, headRefName: 'feat/pay', baseRefName: 'dev', state: 'MERGED', mergedAt: '2026-10-21T00:00:00Z', stage: { id: 'dev', order: 10 } },
 ]);
 eq(feats.length, 2, '两条功能泳道');
-const login = feats.find((f) => f.key === 'feat/login');
-eq(login.items.length, 2, '同一 head 的两个 PR 收成一条');
+const login = feats.find((f) => f.label === 'feat/login');
+eq(login.items.length, 2, '同一 head 的两个 PR 收成一条（短名也合并）');
 eq(login.furthest.id, 'test', '取走得最远的阶段');
 eq(login.done, false, '还有未合并 → 未完成');
 
@@ -71,25 +71,36 @@ eq(stageLanes[0].chip, 'Dev', '阶段模式 chip 是阶段名');
 const featLanes = lanes.buildLanes(sorted.concat([]), 'feature');
 ok(featLanes.every((l) => typeof l.count === 'number' && Array.isArray(l.items)), '两种模式同一形状');
 
-console.log('\n--- 4.5 功能归组：按版本聚合，而不是按 head ---');
-const chain = lanes.groupItemsByFeature([
-  { number: 1, headRefName: 'fix/backfill-v1.0.67-into-v1.0.68', baseRefName: 'release_v1.0.68', title: 'fix(release): 回填 v1.0.67 未进入 v1.0.68 的 13 个提交', state: 'OPEN', stage: { id: 'release', order: 30 } },
-  { number: 2, headRefName: 'sync/release-v1.0.67-backfill-to-main', baseRefName: 'main', title: 'fix(release): main 补回 v1.0.67 缺失的 13 个提交', state: 'OPEN', stage: { id: 'prod', order: 40 } },
-  { number: 3, headRefName: 'feat/login', baseRefName: 'dev', title: 'feat: 登录页', state: 'OPEN', stage: { id: 'dev', order: 10 } },
-  { number: 4, headRefName: 'feat/pay', baseRefName: 'dev', title: 'feat: 支付页', state: 'OPEN', stage: { id: 'dev', order: 10 } },
-]);
-eq(chain.length, 3, '同版本的两个不同 head 收成一条，没版本号的按 head 分开');
-const v67 = chain.find((g) => g.key === 'v1.0.67');
-ok(!!v67, '版本键是 v1.0.67');
-eq(v67.items.length, 2, '两个分支上的同版本 PR 收在一组');
-eq(v67.furthest.id, 'prod', '取走得最远的阶段（Prod）');
-// Host 与客户端两套归组必须同一口径，否则「未来谁接错了」会静默分组错
-const hostChain = groupPrsByFeature([
-  { number: 1, headRefName: 'fix/backfill-v1.0.67-into-v1.0.68', baseRefName: 'release_v1.0.68', state: 'OPEN' },
-  { number: 2, headRefName: 'sync/release-v1.0.67-backfill-to-main', baseRefName: 'main', state: 'OPEN' },
-]);
-eq(hostChain.length, 1, 'Host 侧归组同样按版本聚合');
-eq(hostChain[0].key, 'v1.0.67', 'Host 侧键也是 v1.0.67');
+console.log('\n--- 4.5 功能归组：同一条链的分支名必须收成一组 ---');
+// 真实数据（2026-10-22 会话 12 条 PR）：同一条链的 head 名一定不同，
+// 提交信息与标题也会被改写，只能靠分支名结构判断。
+const realRows = [
+  { number: 4111, headRefName: 'fix/ci-new-branch-base', baseRefName: 'release_v1.0.80', state: 'OPEN', stage: { id: 'release', order: 30 } },
+  { number: 4112, headRefName: 'sync/release-v1.0.80-ci-new-branch-base-20261022', baseRefName: 'main', state: 'OPEN', stage: { id: 'prod', order: 40 } },
+  { number: 1989, headRefName: 'fix/backfill-v1.0.67-into-v1.0.68', baseRefName: 'release_v1.0.68', state: 'OPEN', stage: { id: 'release', order: 30 } },
+  { number: 1988, headRefName: 'sync/release-v1.0.67-backfill-to-main-20261022', baseRefName: 'main', state: 'OPEN', stage: { id: 'prod', order: 40 } },
+  { number: 1621, headRefName: 'fix/backfill-0.1.49-into-0.1.50', baseRefName: 'release_0.1.50', state: 'OPEN', stage: { id: 'release', order: 30 } },
+  { number: 1622, headRefName: 'sync/release-0.1.49-backfill-to-main-20261022', baseRefName: 'main', state: 'OPEN', stage: { id: 'prod', order: 40 } },
+  { number: 2093, headRefName: 'chore/ci-no-tests-release-0.1.61', baseRefName: 'release_0.1.61', state: 'OPEN', stage: { id: 'release', order: 30 } },
+  { number: 4107, headRefName: 'chore/ci-no-tests-release-v1.0.79', baseRefName: 'release_v1.0.79', state: 'OPEN', stage: { id: 'release', order: 30 } },
+  { number: 4109, headRefName: 'sync/release-v1.0.79-to-main-20261021', baseRefName: 'main', state: 'OPEN', stage: { id: 'prod', order: 40 } },
+  { number: 1620, headRefName: 'sync/release-0.1.49-ci-cleanup', baseRefName: 'main', state: 'OPEN', stage: { id: 'prod', order: 40 } },
+  { number: 1618, headRefName: 'release_0.1.49', baseRefName: 'main', state: 'OPEN', stage: { id: 'prod', order: 40 } },
+  { number: 4108, headRefName: 'release_v1.0.79', baseRefName: 'main', state: 'OPEN', stage: { id: 'prod', order: 40 } },
+];
+const realGroups = lanes.groupItemsByFeature(realRows);
+eq(realGroups.length, 5, '12 条真实 PR → 5 条功能泳道');
+const byKey = (k) => realGroups.find((g) => g.key === k);
+eq(byKey('ci-new-branch-base') ? byKey('ci-new-branch-base').items.length : 0, 2, 'ci-new-branch-base 收 2 条（4111 + 4112）');
+eq(byKey('ci-new-branch-base') ? byKey('ci-new-branch-base').label : '', 'fix/ci-new-branch-base', '泳道标签用原始功能分支名');
+eq(byKey('release-0.1.49') ? byKey('release-0.1.49').items.length : 0, 4, 'release-0.1.49 收 4 条');
+eq(byKey('release-v1.0.79') ? byKey('release-v1.0.79').items.length : 0, 3, 'release-v1.0.79 收 3 条');
+eq(byKey('ci-no-tests-release-0.1.61') ? byKey('ci-no-tests-release-0.1.61').items.length : 0, 1, '不同版本的同名清理不合并');
+ok(realGroups.every((g) => g.items.length > 0), '没有空组');
+// Host 与客户端必须同口径，否则以后谁接错都不会报错
+const hostGroups = groupPrsByFeature(realRows);
+eq(hostGroups.length, 5, 'Host 侧同样是 5 组');
+eq(hostGroups.map((g) => g.key).sort().join('|'), realGroups.map((g) => g.key).sort().join('|'), 'Host 与客户端组名完全一致');
 
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');

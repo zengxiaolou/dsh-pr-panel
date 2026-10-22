@@ -10,7 +10,17 @@
  */
 /** 按阶段的首次出现顺序切段（依赖 Host 已排序；不在这里重新排） */
 export declare function groupItemsByStage(items: any[]): any[];
-export declare function groupItemsByFeature(items: any[]): any[];
+/** 分支名归一：去类型前缀、去尾部日期、下划线转连字符 */
+export declare function normalizeBranchSlug(head: any): string;
+export declare function groupItemsByFeature(items: any[]): {
+    key: any;
+    label: any;
+    items: any;
+    furthest: any;
+    done: boolean;
+}[];
+/** 泳道标签：slug 过长时截断（组名本身已经是「最短且够长」的那条） */
+export declare function featureLabelOf(key: string): string;
 /**
  * 统一成「泳道描述」：两种模式给同一形状，渲染层只写一份。
  * - 阶段模式：chip = Dev/Test/…，name 为空

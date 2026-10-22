@@ -301,6 +301,8 @@ export interface FeatureGroup<T> {
   furthest: PipelineStage;
   /** 是否已经全部合并 */
   done: boolean;
+  /** 展示名（原始分支名，未剥前缀）；缺省时用 key */
+  label?: string;
 }
 
 /**
@@ -318,45 +320,95 @@ function advanceRank(stage: PipelineStage | null | undefined): number {
  * 同一变更经常以不同 head 名在多个分支间搬运，按 head 归组会把它拆成多条泳道。
  * 这批 PR 共有的稳定信号是版本号，优先按版本聚合，没有版本号才退回 head。
  */
-export function featureKeyOf(item: any): string {
-  const fields = [item?.headRefName, item?.baseRefName, item?.title];
-  for (const field of fields) {
-    const m = String(field || '').match(/(?:^|[^\d.])v?(\d+\.\d+\.\d+)/i);
-    if (m) return `v${m[1]}`;
-  }
-  const head = String(item?.headRefName || '').trim();
-  if (head) return head;
-  return `${item?.repo || ''}#${item?.number || ''}`;
+const FEATURE_NOISE_TOKENS = new Set([
+  'release', 'rel', 'sync', 'to', 'into', 'from', 'main', 'master',
+  'dev', 'develop', 'test', 'qa', 'staging', 'merge', 'branch',
+]);
+
+/** 分支名归一：去类型前缀、去尾部日期、下划线转连字符 */
+export function normalizeBranchSlug(head: any): string {
+  let slug = String(head == null ? '' : head).toLowerCase().replace(/_/g, '-');
+  slug = slug.replace(/^(fix|feat|feature|chore|hotfix|bugfix|sync|rel|release)\//, '');
+  slug = slug.replace(/-?\d{8}$/, '');
+  return slug.replace(/-{2,}/g, '-').replace(/^-|-$/g, '');
+}
+
+function versionTokensOf(slug: string): string[] {
+  return (slug.match(/v?(\d+\.\d+\.\d+)/g) || []).map((v) => v.replace(/^v/, ''));
+}
+
+function topicTokensOf(slug: string): string[] {
+  return slug.split(/[-/]/).filter((t) => t.length >= 4 && !FEATURE_NOISE_TOKENS.has(t) && !/^v?\d/.test(t));
+}
+
+/**
+ * 两个分支名是否属于同一条链（详见 src/ui/pr-lanes.ts 的同名实现）：
+ * a) 派生分支名包含源分支名；b) 同版本 + 共享主题词。
+ */
+function sameChain(a: any, b: any): boolean {
+  if (a.slug && a.slug === b.slug) return true;
+  const shortSlug = a.slug.length <= b.slug.length ? a.slug : b.slug;
+  const longSlug = a.slug.length <= b.slug.length ? b.slug : a.slug;
+  if (shortSlug.length >= 6 && longSlug.includes(shortSlug)) return true;
+  const sharedVersion = a.versions.some((v: string) => b.versions.includes(v));
+  if (!sharedVersion) return false;
+  return a.topics.some((t: string) => b.topics.includes(t));
+}
+
+/** 单条 PR 的归一化信息（导出供测试） */
+export function featureRowOf(item: any) {
+  const slug = normalizeBranchSlug(item?.headRefName);
+  return { slug, versions: versionTokensOf(slug), topics: topicTokensOf(slug) };
 }
 
 export function groupPrsByFeature<T extends Record<string, any>>(items: T[]): Array<FeatureGroup<T>> {
   const sorted = sortPrsByStage(items);
-  const buckets = new Map<string, T[]>();
-  for (const item of sorted) {
-    const key = featureKeyOf(item);
-    const list = buckets.get(key) || [];
-    list.push(item);
-    buckets.set(key, list);
+  const rows = sorted.map((item) => ({ item, ...featureRowOf(item) }));
+
+  // 并查集：只有同链才连（包含关系 / 同版本+共享主题词）
+  const parent = rows.map((_, i) => i);
+  const find = (x: number): number => {
+    while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+    return x;
+  };
+  for (let i = 0; i < rows.length; i += 1) {
+    for (let j = i + 1; j < rows.length; j += 1) {
+      if (sameChain(rows[i], rows[j])) {
+        const a = find(i);
+        const b = find(j);
+        if (a !== b) parent[a] = b;
+      }
+    }
   }
+
+  const buckets = new Map<number, typeof rows>();
+  rows.forEach((row, idx) => {
+    const root = find(idx);
+    const list = buckets.get(root) || [];
+    list.push(row);
+    buckets.set(root, list);
+  });
+
   const out: Array<FeatureGroup<T>> = [];
-  for (const [key, list] of buckets) {
+  for (const list of buckets.values()) {
+    // 组名取「最短且够长」的 slug：太短的（v1.0.79、ci）不适合当标签
+    const slugs = list.map((r) => r.slug).filter(Boolean).sort((a, b) => a.length - b.length);
+    const key = slugs.find((k) => k.length >= 8) || slugs[0] || `${list[0].item?.repo || ''}#${list[0].item?.number || ''}`;
     let furthest: PipelineStage | null = null;
     let furthestRank = -1;
-    let done = list.length > 0;
-    for (const item of list) {
-      const stage = (item && item.stage) || null;
+    let done = true;
+    for (const row of list) {
+      const stage = (row.item && row.item.stage) || null;
       const rank = advanceRank(stage);
-      if (rank > furthestRank) {
-        furthest = stage;
-        furthestRank = rank;
-      }
-      if (!(item && item.mergedAt) && String((item && item.state) || '').toUpperCase() !== 'CLOSED') done = false;
+      if (rank > furthestRank) { furthest = stage; furthestRank = rank; }
+      if (!(row.item && row.item.mergedAt) && String((row.item && row.item.state) || '').toUpperCase() !== 'CLOSED') done = false;
     }
-    out.push({ key, items: list, furthest: furthest || stageById('other'), done });
+    const labelRow = list.find((r) => r.slug === key);
+    const label = labelRow ? String(labelRow.item?.headRefName || '').trim() : '';
+    out.push({ key, label: label || key, items: list.map((r) => r.item), furthest: furthest || stageById('other'), done });
   }
-  // 功能之间：未完成的在前；再按「走得最远的阶段」**升序**——Dev 在前、Prod 在最后，
-  // 与阶段泳道同一个方向，切换视图时眼睛不用重新学一遍顺序；
-  // 最后按最近更新时间
+
+  // 未完成的在前；再按走得最远的阶段升序（Dev 在前），与阶段泳道同向
   return out.sort((a, b) => {
     if (a.done !== b.done) return a.done ? 1 : -1;
     const ra = advanceRank(a.furthest);

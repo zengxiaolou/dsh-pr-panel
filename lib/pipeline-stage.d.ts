@@ -102,11 +102,15 @@ export interface FeatureGroup<T> {
     furthest: PipelineStage;
     /** 是否已经全部合并 */
     done: boolean;
+    /** 展示名（原始分支名，未剥前缀）；缺省时用 key */
+    label?: string;
 }
-/**
- * 版本号提取（与 src/ui/pr-lanes.ts 的客户端实现保持同一口径）：
- * 同一变更经常以不同 head 名在多个分支间搬运，按 head 归组会把它拆成多条泳道。
- * 这批 PR 共有的稳定信号是版本号，优先按版本聚合，没有版本号才退回 head。
- */
-export declare function featureKeyOf(item: any): string;
+/** 分支名归一：去类型前缀、去尾部日期、下划线转连字符 */
+export declare function normalizeBranchSlug(head: any): string;
+/** 单条 PR 的归一化信息（导出供测试） */
+export declare function featureRowOf(item: any): {
+    slug: string;
+    versions: string[];
+    topics: string[];
+};
 export declare function groupPrsByFeature<T extends Record<string, any>>(items: T[]): Array<FeatureGroup<T>>;
