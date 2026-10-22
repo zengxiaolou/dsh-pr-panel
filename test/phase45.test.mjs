@@ -188,6 +188,17 @@ eq(hostLab.find((g) => g.key === 'label:login-v2').items.length, 2, 'Host 侧同
 // 真实数据没有标签，结果必须与之前一致
 ok(realGroups.every((g) => g.source === 'branch'), '真实 12 条没有标签 → 全部按分支链归组');
 
+console.log('\n--- 4.7 浮窗 CI/CD 紧凑条：一行说清状态 ---');
+const { ciWorkflowLine } = await import('../lib/ui/session-pr-panel.js');
+const ago = (min) => new Date(Date.now() - min * 60000).toISOString();
+eq(ciWorkflowLine({ name: 'A', latest: { status: 'in_progress', active: { stepsDone: 2, stepsTotal: 13, stepName: '运行测试' } } }).text, '3/13 步', '运行中给「第 n/m 步」');
+eq(ciWorkflowLine({ name: 'A', latest: { status: 'in_progress' } }).text, '运行中', '没有 steps 时只说运行中');
+eq(ciWorkflowLine({ name: 'B', latest: { status: 'completed', conclusion: 'success', completedAt: ago(12) } }).text, '12m 前', '通过给「多久前完成」');
+eq(ciWorkflowLine({ name: 'C', latest: { status: 'completed', conclusion: 'failure', completedAt: ago(5) } }).text, '失败 · 5m 前', '失败要显眼');
+eq(ciWorkflowLine({ name: 'D', latest: { status: 'queued' } }).text, '排队中', '排队态');
+eq(ciWorkflowLine({ name: 'E', latest: { status: 'completed', conclusion: 'cancelled', completedAt: ago(3) } }).text, '已取消 · 3m 前', '取消态');
+ok(ciWorkflowLine({ name: 'C', latest: { status: 'completed', conclusion: 'failure' } }).tone === 'fail', '失败态 tone=fail（渲染层据此上色）');
+
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
 ok(client.includes('// ---- [Bundled: pr-lanes.js] ----'), 'pr-lanes 已打进 bundle');
@@ -197,6 +208,9 @@ ok(/\.ghsp-head\{[^}]*border-radius:12px/.test(client), '头部卡片圆角规�
 ok(/\.ghsp-card\{[^}]*background:var\(--dsw-specific-menu/.test(client), '浮窗卡片用宿主半透明菜单底（跟随系统透明）');
 ok(/\.ghsp-card\{[^}]*backdrop-filter/.test(client), '浮窗卡片带背景模糊');
 ok(/\.ghsp-pill\{[^}]*background:var\(--dsw-specific-menu/.test(client), '浮窗药丸同样跟随透明');
+ok(client.includes('function CiPipelineStrip'), '浮窗里有 CI/CD 紧凑条组件');
+ok(client.includes('.ghsp-ci-head'), '紧凑条样式已打包');
+ok(client.includes('/api/github/ci-pipeline'), '紧凑条走仓库级流水线接口');
 ok(client.includes('prefers-reduced-transparency'), '系统减弱透明度时有回退（与宿主一致）');
 ok(!/body:not\(\[data-ds-dark-theme\]\) \.ghsp-card\{background:color-mix/.test(client), '不再有覆盖成不透明底色的浅色规则');
 const routes = fs.readFileSync(path.join(dirname, '../lib/api/routes-actions.js'), 'utf8');
