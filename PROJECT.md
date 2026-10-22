@@ -54,6 +54,18 @@ docs/              session-pr-channel.md（唯一实现说明）+ images
 gh pr edit <编号> --add-label "feature:login-v2"
 ```
 
+## 泳道头 tag：完成度聚合
+
+tag 表达「这个功能走完没有」，不是「它在哪个环境」（环境在每行的 `→ 目标分支` 上）。
+
+| 情况 | tag |
+| :--- | :--- |
+| 有任一 PR 还开着（open / draft） | `PENDING` |
+| 没有开着的，且至少有一个已合并 | `DONE`（merged + closed 混合也算走完：改动已经进去了） |
+| 没有开着的，全部 closed（一个都没合） | `CLOSED`（整个功能放弃了） |
+
+排序：`PENDING → DONE → CLOSED`。
+
 ## 版本号约定
 
 **默认只加最后一位**，中间位留给大改动：

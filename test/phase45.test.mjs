@@ -80,7 +80,7 @@ eq(statusOf([mk(3, 'fix/solo-c', 'CLOSED')]), 'CLOSED', '单个已关闭 → CLO
 eq(statusOf([mk(4, 'fix/pair-open-a', 'OPEN'), mk(5, 'fix/pair-open-b', 'MERGED', true)]), 'PENDING', '多个里有一个没完成 → PENDING');
 eq(statusOf([mk(6, 'fix/pair-closed-a', 'CLOSED'), mk(7, 'fix/pair-closed-b', 'CLOSED')]), 'CLOSED', '全部关闭 → CLOSED');
 eq(statusOf([mk(8, 'fix/pair-done-a', 'MERGED', true), mk(9, 'fix/pair-done-b', 'MERGED', true)]), 'DONE', '全部合并 → DONE');
-eq(statusOf([mk(10, 'fix/mixboth-case-a', 'MERGED', true), mk(11, 'fix/mixboth-case-b', 'CLOSED')]), 'PENDING', '已合并 + 已关闭混合 → PENDING（有一个没完成）');
+eq(statusOf([mk(10, 'fix/mixboth-case-a', 'MERGED', true), mk(11, 'fix/mixboth-case-b', 'CLOSED')]), 'DONE', '已合并 + 已关闭 → DONE（改动已经进去了）');
 // 排序：pending → done → closed
 const ordered = lanes.buildLanes([
   mk(20, 'fix/zz-closed', 'CLOSED'),
