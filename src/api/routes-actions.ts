@@ -1170,14 +1170,21 @@ export function registerActionRoutes(
           createdAt: meta?.createdAt || '',
           updatedAt: meta?.updatedAt || '',
           mergedAt: meta?.mergedAt || '',
-          // 流水线阶段：Dev → Test → Release → Prod（按目标分支/label 判定）
+          // 标签归一成字符串数组：批量查询给 {nodes:[{name}]}，gh pr view 给 [{name}]。
+          // 功能归组要用它（feature:<名> 优先于分支名启发式），阶段判定也要用它。
           ...(function () {
+            const labelNames: string[] = Array.isArray(meta?.labels?.nodes)
+              ? (meta.labels.nodes as any[]).map((l) => String((l && l.name) || '').trim()).filter(Boolean)
+              : (Array.isArray(meta?.labels)
+                ? (meta.labels as any[]).map((l) => String((typeof l === 'string' ? l : (l && l.name)) || '').trim()).filter(Boolean)
+                : []);
+            // 流水线阶段：Dev → Test → Release → Prod（按 label / 目标分支判定）
             const stage = resolvePipelineStage({
               baseRefName: meta?.baseRefName || '',
               headRefName: meta?.headRefName || '',
-              labels: meta?.labels,
+              labels: labelNames,
             });
-            return { stage, stageId: stage.id };
+            return { labels: labelNames, stage, stageId: stage.id };
           })(),
           checks: summarizeCheckRollup(meta?.statusCheckRollup) && meta?.statusCheckRollup
             ? summarizeCheckRollup(meta.statusCheckRollup)
@@ -1200,7 +1207,7 @@ export function registerActionRoutes(
           const parts = repo.split('/');
           if (parts.length !== 2) return null;
           const aliases = list.map((ref, idx) =>
-            `  p${idx}: pullRequest(number: ${Number(ref.number)}) { number title state isDraft url author { login } baseRefName headRefName additions deletions changedFiles reviewDecision statusCheckRollup { state } createdAt updatedAt mergedAt }`,
+            `  p${idx}: pullRequest(number: ${Number(ref.number)}) { number title state isDraft url author { login } baseRefName headRefName additions deletions changedFiles reviewDecision labels(first: 20) { nodes { name } } statusCheckRollup { state } createdAt updatedAt mergedAt }`,
           ).join('\n');
           const query = `query {\n  repository(owner: ${JSON.stringify(parts[0])}, name: ${JSON.stringify(parts[1])}) {\n${aliases}\n  }\n}`;
           // 快路径：进程内复用的 HTTP 通道（同一端点反复取，省掉每次 gh 的握手）
@@ -1305,7 +1312,7 @@ export function registerActionRoutes(
           // 兜底：GraphQL 不可用（token 权限/企业版策略）时退回逐条 gh pr view
           const r = await executor.run<any>(
             ['pr', 'view', String(ref.number), '--repo', ref.repo, '--json',
-              'number,title,state,isDraft,url,author,baseRefName,headRefName,additions,deletions,changedFiles,reviewDecision,statusCheckRollup,createdAt,updatedAt,mergedAt'],
+              'number,title,state,isDraft,url,author,baseRefName,headRefName,additions,deletions,changedFiles,reviewDecision,labels,statusCheckRollup,createdAt,updatedAt,mergedAt'],
             { timeoutMs: 15_000 },
           );
           const meta = r.ok && r.data ? r.data : null;

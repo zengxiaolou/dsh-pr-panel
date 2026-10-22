@@ -86,9 +86,30 @@ function topicTokensOf(slug: string): string[] {
   });
 }
 
+/**
+ * 从 PR 标签里取功能名：`feature:xxx` / `feature/xxx` / `feature=xxx`。
+ * 这是**唯一由人显式指定**的归组信号，可靠性高于任何分支名推断，
+ * 所以只要两边都带标签，就完全以标签为准。
+ */
+export function featureLabelOfItem(item: any): string {
+  var labels = item && item.labels;
+  var list = Array.isArray(labels) ? labels : [];
+  for (var i = 0; i < list.length; i += 1) {
+    var raw = list[i];
+    var name = typeof raw === "string" ? raw : String((raw && raw.name) || "");
+    var m = name.trim().match(/^feature\s*[:/=]\s*(.+)$/i);
+    if (m) return m[1].trim();
+  }
+  return "";
+}
+
 /** 两个分支名是否属于同一条链 */
 function sameChain(a: any, b: any): boolean {
-  // 完全同名（含短名，如 feat/login → login）一定是同一条链
+  // ① 标签优先：两边都有 feature 标签时，只看标签，不再做分支名推断
+  if (a.featureLabel || b.featureLabel) {
+    return Boolean(a.featureLabel) && a.featureLabel === b.featureLabel;
+  }
+  // ② 完全同名（含短名，如 feat/login → login）一定是同一条链
   if (a.slug && a.slug === b.slug) return true;
   var shortSlug = a.slug.length <= b.slug.length ? a.slug : b.slug;
   var longSlug = a.slug.length <= b.slug.length ? b.slug : a.slug;
@@ -115,6 +136,7 @@ export function groupItemsByFeature(items: any[]) {
       slug: slug,
       versions: versionTokensOf(slug),
       topics: topicTokensOf(slug),
+      featureLabel: featureLabelOfItem(it),
       key: slug || String((it && it.repo) || '') + '#' + String((it && it.number) || ''),
     };
   });
@@ -141,10 +163,16 @@ export function groupItemsByFeature(items: any[]) {
     var rows = buckets[root];
     var slugs = rows.map(function (r: any) { return r.slug; }).filter(Boolean).sort(function (a: string, b: string) { return a.length - b.length; });
     // 组名取「最短且够长」的 slug：太短的（v1.0.79、ci）不适合当标签
-    var key = slugs.filter(function (k: string) { return k.length >= 8; })[0] || slugs[0] || rows[0].key;
-    var label = "";
-    for (var r = 0; r < rows.length; r += 1) {
-      if (rows[r].slug === key) { label = String(rows[r].item && rows[r].item.headRefName || "").trim(); break; }
+    var byLabel = rows[0] && rows[0].featureLabel ? rows[0].featureLabel : "";
+    var key = byLabel
+      ? "label:" + byLabel
+      : (slugs.filter(function (k: string) { return k.length >= 8; })[0] || slugs[0] || rows[0].key);
+    var source = byLabel ? "label" : "branch";
+    var label = byLabel;
+    if (!label) {
+      for (var r = 0; r < rows.length; r += 1) {
+        if (rows[r].slug === key) { label = String(rows[r].item && rows[r].item.headRefName || "").trim(); break; }
+      }
     }
     var furthest: any = null;
     var done = true;
@@ -153,7 +181,7 @@ export function groupItemsByFeature(items: any[]) {
       if (advanceRank(it && it.stage) > advanceRank(furthest)) furthest = it.stage || null;
       if (!(it && it.mergedAt) && String((it && it.state) || '').toUpperCase() !== 'CLOSED') done = false;
     });
-    return { key: key, label: label || key, items: itemsInGroup, furthest: furthest, done: done };
+    return { key: key, label: label || key, source: source, items: itemsInGroup, furthest: furthest, done: done };
   });
 
   // 未完成的在前；再按走得最远的阶段升序（Dev 在前），与阶段泳道同向
@@ -191,6 +219,9 @@ export function buildLanes(items: any[], mode: string) {
         name: featureLabelOf(g.label || g.key),
         count: g.items.length,
         title: g.items.length + " 个 PR · 最远走到 " + (st ? st.label : "未归类") + (g.done ? " · 已全部合并" : "")
+          + (g.source === "label"
+            ? "\n按标签 feature:" + g.key.replace(/^label:/, "") + " 归组"
+            : "\n按分支名推断归组；给 PR 打 feature:<名> 标签即可精确归组")
           + (g.items.length > 1 ? "\n同一版本/变更集在各分支上的 PR 收在此组" : ""),
         items: g.items,
       };

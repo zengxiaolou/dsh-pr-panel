@@ -12,9 +12,16 @@
 export declare function groupItemsByStage(items: any[]): any[];
 /** 分支名归一：去类型前缀、去尾部日期、下划线转连字符 */
 export declare function normalizeBranchSlug(head: any): string;
+/**
+ * 从 PR 标签里取功能名：`feature:xxx` / `feature/xxx` / `feature=xxx`。
+ * 这是**唯一由人显式指定**的归组信号，可靠性高于任何分支名推断，
+ * 所以只要两边都带标签，就完全以标签为准。
+ */
+export declare function featureLabelOfItem(item: any): string;
 export declare function groupItemsByFeature(items: any[]): {
     key: any;
     label: any;
+    source: string;
     items: any;
     furthest: any;
     done: boolean;

@@ -102,6 +102,41 @@ const hostGroups = groupPrsByFeature(realRows);
 eq(hostGroups.length, 5, 'Host 侧同样是 5 组');
 eq(hostGroups.map((g) => g.key).sort().join('|'), realGroups.map((g) => g.key).sort().join('|'), 'Host 与客户端组名完全一致');
 
+console.log('\n--- 4.6 标签优先：feature:<名> 高于分支名推断 ---');
+const withLabels = [
+  // 两条完全无关的分支，但同一个功能标签
+  { number: 20, headRefName: 'fix/login-crash', baseRefName: 'release_v1.0.90', labels: ['feature:login-v2'], state: 'OPEN', stage: { id: 'release', order: 30 } },
+  { number: 21, headRefName: 'sync/hotfix-xyz-to-main', baseRefName: 'main', labels: [{ name: 'feature:login-v2' }], state: 'OPEN', stage: { id: 'prod', order: 40 } },
+  // 同分支不同标签：必须分开
+  { number: 22, headRefName: 'fix/shared-branch', baseRefName: 'dev', labels: ['feature:a'], state: 'OPEN', stage: { id: 'dev', order: 10 } },
+  { number: 23, headRefName: 'fix/shared-branch', baseRefName: 'dev', labels: ['feature:b'], state: 'OPEN', stage: { id: 'dev', order: 10 } },
+  // 一个有标签、一个没有：标签隔离，不按分支名合并
+  { number: 24, headRefName: 'fix/ci-new-branch-base', baseRefName: 'dev', labels: ['feature:c'], state: 'OPEN', stage: { id: 'dev', order: 10 } },
+  { number: 25, headRefName: 'fix/ci-new-branch-base-extra', baseRefName: 'dev', labels: [], state: 'OPEN', stage: { id: 'dev', order: 10 } },
+];
+const lab = lanes.groupItemsByFeature(withLabels);
+const g1 = lab.filter((g) => g.source === 'label');
+eq(g1.length, 4, '带标签的四条各自成组（login-v2 / a / b / c）');
+const loginV2 = lab.find((g) => g.key === 'label:login-v2');
+ok(!!loginV2, '标签组键为 label:login-v2');
+eq(loginV2.items.length, 2, '无关分支但同标签 → 并成一组');
+eq(loginV2.label, 'login-v2', '展示名用标签值');
+eq(loginV2.furthest.id, 'prod', '取最远阶段');
+eq(lab.find((g) => g.key === 'label:a').items.length, 1, '同分支不同标签不合并（a 独组）');
+eq(lab.find((g) => g.key === 'label:b').items.length, 1, '同分支不同标签不合并（b 独组）');
+eq(lab.find((g) => g.key === 'label:c').items.length, 1, '有标签的那条不被无标签的同名分支带走');
+ok(lab.some((g) => g.source === 'branch'), '无标签的仍然走分支名归组');
+// 标签写法：feature/x、FEATURE=x 都认
+eq(lanes.featureLabelOfItem({ labels: ['feature/pay-v2'] }), 'pay-v2', 'feature/ 前缀可识别');
+eq(lanes.featureLabelOfItem({ labels: ['FEATURE=pay-v2'] }), 'pay-v2', '大小写与 = 分隔可识别');
+eq(lanes.featureLabelOfItem({ labels: ['bug', 'p1'] }), '', '普通标签不算功能标签');
+// Host 与客户端同口径
+const hostLab = groupPrsByFeature(withLabels);
+eq(hostLab.filter((g) => g.source === 'label').length, 4, 'Host 侧同样是 4 个标签组');
+eq(hostLab.find((g) => g.key === 'label:login-v2').items.length, 2, 'Host 侧同标签也并组');
+// 真实数据没有标签，结果必须与之前一致
+ok(realGroups.every((g) => g.source === 'branch'), '真实 12 条没有标签 → 全部按分支链归组');
+
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
 ok(client.includes('// ---- [Bundled: pr-lanes.js] ----'), 'pr-lanes 已打进 bundle');

@@ -301,8 +301,10 @@ export interface FeatureGroup<T> {
   furthest: PipelineStage;
   /** 是否已经全部合并 */
   done: boolean;
-  /** 展示名（原始分支名，未剥前缀）；缺省时用 key */
+  /** 展示名（原始分支名，或标签值）；缺省时用 key */
   label?: string;
+  /** 分组依据：label（人工显式指定）优先于 branch（分支名推断） */
+  source?: 'label' | 'branch';
 }
 
 /**
@@ -346,6 +348,11 @@ function topicTokensOf(slug: string): string[] {
  * a) 派生分支名包含源分支名；b) 同版本 + 共享主题词。
  */
 function sameChain(a: any, b: any): boolean {
+  // ① 标签优先：任一方带 feature 标签时只看标签，不再做分支名推断
+  if (a.featureLabel || b.featureLabel) {
+    return Boolean(a.featureLabel) && a.featureLabel === b.featureLabel;
+  }
+  // ② 完全同名（含短名）
   if (a.slug && a.slug === b.slug) return true;
   const shortSlug = a.slug.length <= b.slug.length ? a.slug : b.slug;
   const longSlug = a.slug.length <= b.slug.length ? b.slug : a.slug;
@@ -355,10 +362,25 @@ function sameChain(a: any, b: any): boolean {
   return a.topics.some((t: string) => b.topics.includes(t));
 }
 
+/**
+ * 从 PR 标签里取功能名（`feature:xxx` / `feature/xxx` / `feature=xxx`）。
+ * 唯一由人显式指定的归组信号：两边都有标签时完全以标签为准。
+ */
+export function featureLabelOfItem(item: any): string {
+  const labels = item?.labels;
+  const list = Array.isArray(labels) ? labels : [];
+  for (const raw of list) {
+    const name = typeof raw === 'string' ? raw : String(raw?.name || '');
+    const m = name.trim().match(/^feature\s*[:/=]\s*(.+)$/i);
+    if (m) return m[1].trim();
+  }
+  return '';
+}
+
 /** 单条 PR 的归一化信息（导出供测试） */
 export function featureRowOf(item: any) {
   const slug = normalizeBranchSlug(item?.headRefName);
-  return { slug, versions: versionTokensOf(slug), topics: topicTokensOf(slug) };
+  return { slug, versions: versionTokensOf(slug), topics: topicTokensOf(slug), featureLabel: featureLabelOfItem(item) };
 }
 
 export function groupPrsByFeature<T extends Record<string, any>>(items: T[]): Array<FeatureGroup<T>> {
@@ -393,7 +415,11 @@ export function groupPrsByFeature<T extends Record<string, any>>(items: T[]): Ar
   for (const list of buckets.values()) {
     // 组名取「最短且够长」的 slug：太短的（v1.0.79、ci）不适合当标签
     const slugs = list.map((r) => r.slug).filter(Boolean).sort((a, b) => a.length - b.length);
-    const key = slugs.find((k) => k.length >= 8) || slugs[0] || `${list[0].item?.repo || ''}#${list[0].item?.number || ''}`;
+    const byLabel = list[0]?.featureLabel || '';
+    const key = byLabel
+      ? `label:${byLabel}`
+      : (slugs.find((k) => k.length >= 8) || slugs[0] || `${list[0].item?.repo || ''}#${list[0].item?.number || ''}`);
+    const source: 'label' | 'branch' = byLabel ? 'label' : 'branch';
     let furthest: PipelineStage | null = null;
     let furthestRank = -1;
     let done = true;
@@ -403,9 +429,9 @@ export function groupPrsByFeature<T extends Record<string, any>>(items: T[]): Ar
       if (rank > furthestRank) { furthest = stage; furthestRank = rank; }
       if (!(row.item && row.item.mergedAt) && String((row.item && row.item.state) || '').toUpperCase() !== 'CLOSED') done = false;
     }
-    const labelRow = list.find((r) => r.slug === key);
-    const label = labelRow ? String(labelRow.item?.headRefName || '').trim() : '';
-    out.push({ key, label: label || key, items: list.map((r) => r.item), furthest: furthest || stageById('other'), done });
+    const labelRow = byLabel ? null : list.find((r) => r.slug === key);
+    const label = byLabel || (labelRow ? String(labelRow.item?.headRefName || '').trim() : '');
+    out.push({ key, label: label || key, source, items: list.map((r) => r.item), furthest: furthest || stageById('other'), done });
   }
 
   // 未完成的在前；再按走得最远的阶段升序（Dev 在前），与阶段泳道同向

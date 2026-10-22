@@ -34,6 +34,26 @@ docs/              session-pr-channel.md（唯一实现说明）+ images
 
 `lib/` 是 `pnpm build` 产物，`node_modules` 在当前机器上是指向旧项目的软链（不要动）。
 
+## 功能归组：`feature:<名>` 标签
+
+「功能泳道」把一个功能在多个目标分支上的 PR 收成一条。判断依据有两条，**标签优先**：
+
+| 优先级 | 依据 | 说明 |
+| :--- | :--- | :--- |
+| 1 | PR 标签 `feature:<名>` | 人工显式指定；两边都有标签时**只看标签**，不再做分支名推断。同分支不同标签会被拆开，有标签的也不会被无标签的同名分支带走 |
+| 2 | 分支名结构 | 派生分支名包含源分支名（`sync/…-ci-new-branch-base-20261022` ⊃ `ci-new-branch-base`），或「同版本 + 共享主题词」（`backfill-v1.0.67-into-…` 与 `release-v1.0.67-backfill-…`） |
+
+标签写法：`feature:login-v2`、`feature/login-v2`、`FEATURE=login-v2` 都认（大小写、分隔符不敏感），
+值里可以带 `-` `.` `/`。普通标签（`bug`、`p1`）不参与归组。
+
+**什么时候该打标签**：当同步 PR 的分支名与标题都被改写、且主题词也对不上时，
+分支推断会把它算成另一个功能。给同一条链的 PR 打同一个 `feature:<名>`，归组就是确定的，
+不必再依赖字符串启发。
+
+```bash
+gh pr edit <编号> --add-label "feature:login-v2"
+```
+
 ## 为什么不再 rebase 上游
 
 1. **方向相反**：上游在做功能广度（工作台、Issue、Actions、同步、升级），本分支在做单条 PR 通道的深度（门禁、fix 提示词、按文件补丁、core/thread 拆分）。

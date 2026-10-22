@@ -102,15 +102,23 @@ export interface FeatureGroup<T> {
     furthest: PipelineStage;
     /** 是否已经全部合并 */
     done: boolean;
-    /** 展示名（原始分支名，未剥前缀）；缺省时用 key */
+    /** 展示名（原始分支名，或标签值）；缺省时用 key */
     label?: string;
+    /** 分组依据：label（人工显式指定）优先于 branch（分支名推断） */
+    source?: 'label' | 'branch';
 }
 /** 分支名归一：去类型前缀、去尾部日期、下划线转连字符 */
 export declare function normalizeBranchSlug(head: any): string;
+/**
+ * 从 PR 标签里取功能名（`feature:xxx` / `feature/xxx` / `feature=xxx`）。
+ * 唯一由人显式指定的归组信号：两边都有标签时完全以标签为准。
+ */
+export declare function featureLabelOfItem(item: any): string;
 /** 单条 PR 的归一化信息（导出供测试） */
 export declare function featureRowOf(item: any): {
     slug: string;
     versions: string[];
     topics: string[];
+    featureLabel: string;
 };
 export declare function groupPrsByFeature<T extends Record<string, any>>(items: T[]): Array<FeatureGroup<T>>;
