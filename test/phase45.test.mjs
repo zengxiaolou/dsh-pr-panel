@@ -71,6 +71,24 @@ eq(stageLanes[0].chip, 'Dev', '阶段模式 chip 是阶段名');
 const featLanes = lanes.buildLanes(sorted.concat([]), 'feature');
 ok(featLanes.every((l) => typeof l.count === 'number' && Array.isArray(l.items)), '两种模式同一形状');
 
+console.log('\n--- 4.4b 泳道头 tag：完成度而不是环境 ---');
+const mk = (num, head, state, merged) => ({ number: num, headRefName: head, baseRefName: 'main', state: state, mergedAt: merged ? '2026-10-22T00:00:00Z' : '' });
+const statusOf = (rows) => lanes.buildLanes(rows, 'feature')[0].chip;
+eq(statusOf([mk(1, 'fix/solo-a', 'OPEN')]), 'PENDING', '单个未合并 → PENDING');
+eq(statusOf([mk(2, 'fix/solo-b', 'MERGED', true)]), 'DONE', '单个已合并 → DONE');
+eq(statusOf([mk(3, 'fix/solo-c', 'CLOSED')]), 'CLOSED', '单个已关闭 → CLOSED');
+eq(statusOf([mk(4, 'fix/pair-open-a', 'OPEN'), mk(5, 'fix/pair-open-b', 'MERGED', true)]), 'PENDING', '多个里有一个没完成 → PENDING');
+eq(statusOf([mk(6, 'fix/pair-closed-a', 'CLOSED'), mk(7, 'fix/pair-closed-b', 'CLOSED')]), 'CLOSED', '全部关闭 → CLOSED');
+eq(statusOf([mk(8, 'fix/pair-done-a', 'MERGED', true), mk(9, 'fix/pair-done-b', 'MERGED', true)]), 'DONE', '全部合并 → DONE');
+eq(statusOf([mk(10, 'fix/mixboth-case-a', 'MERGED', true), mk(11, 'fix/mixboth-case-b', 'CLOSED')]), 'PENDING', '已合并 + 已关闭混合 → PENDING（有一个没完成）');
+// 排序：pending → done → closed
+const ordered = lanes.buildLanes([
+  mk(20, 'fix/zz-closed', 'CLOSED'),
+  mk(21, 'fix/zz-done', 'MERGED', true),
+  mk(22, 'fix/zz-open', 'OPEN'),
+], 'feature').map((l) => l.chip);
+eq(ordered.join(','), 'PENDING,DONE,CLOSED', '泳道排序：要处理的在前，已关闭在最后');
+
 console.log('\n--- 4.5 功能归组：同一条链的分支名必须收成一组 ---');
 // 真实数据（2026-10-22 会话 12 条 PR）：同一条链的 head 名一定不同，
 // 提交信息与标题也会被改写，只能靠分支名结构判断。

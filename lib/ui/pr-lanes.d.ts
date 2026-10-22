@@ -28,11 +28,6 @@ export declare function groupItemsByFeature(items: any[]): {
 }[];
 /** 泳道标签：slug 过长时截断（组名本身已经是「最短且够长」的那条） */
 export declare function featureLabelOf(key: string): string;
-/**
- * 统一成「泳道描述」：两种模式给同一形状，渲染层只写一份。
- * - 阶段模式：chip = Dev/Test/…，name 为空
- * - 功能模式：chip = 该功能走到的最远阶段，name = 分支名
- */
 export declare function buildLanes(items: any[], mode: string): {
     key: string;
     id: any;
