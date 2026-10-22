@@ -176,6 +176,11 @@ ok(client.includes('// ---- [Bundled: pr-lanes.js] ----'), 'pr-lanes 已打进 b
 ok(client.includes('.ghsp-lane-chip'), '泳道标签样式已打包');
 ok(client.includes('.ghsp-mode-btn.active'), '视图切换样式已打包');
 ok(/\.ghsp-head\{[^}]*border-radius:12px/.test(client), '头部卡片圆角规则已打包（与内容卡片同宽同圆角）');
+ok(/\.ghsp-card\{[^}]*background:var\(--dsw-specific-menu/.test(client), '浮窗卡片用宿主半透明菜单底（跟随系统透明）');
+ok(/\.ghsp-card\{[^}]*backdrop-filter/.test(client), '浮窗卡片带背景模糊');
+ok(/\.ghsp-pill\{[^}]*background:var\(--dsw-specific-menu/.test(client), '浮窗药丸同样跟随透明');
+ok(client.includes('prefers-reduced-transparency'), '系统减弱透明度时有回退（与宿主一致）');
+ok(!/body:not\(\[data-ds-dark-theme\]\) \.ghsp-card\{background:color-mix/.test(client), '不再有覆盖成不透明底色的浅色规则');
 const routes = fs.readFileSync(path.join(dirname, '../lib/api/routes-actions.js'), 'utf8');
 ok(routes.includes('resolvePipelineStage'), '路由已解析阶段');
 ok(routes.includes('sortPrsByStage'), '路由已按阶段排序');
