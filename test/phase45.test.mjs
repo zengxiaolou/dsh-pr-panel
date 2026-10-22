@@ -297,6 +297,16 @@ eq(avatarSrc('https://x/y', 8), 'https://x/y?s=12', '尺寸下限 12（太小会
 
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
+console.log('\n--- 4.12 CI/CD tab 展示 workflow 文件链接 ---');
+ok(client.includes('function WorkflowFilesBlock'), 'CI/CD tab 用 workflow 文件列表');
+ok(client.includes('/api/github/workflows'), '走 workflow 文件接口');
+ok(client.includes('.ghsp-wf-row'), '文件行样式已打包');
+ok(client.includes('在 GitHub 打开'), '文件行说明点击会跳 GitHub');
+ok(!client.includes('function CiPipelineStrip'), '旧的「运行态」紧凑条已移除（避免两种口径并存）');
+const routesSrc = fs.readFileSync(path.join(dirname, '../lib/api/routes-actions.js'), 'utf8');
+ok(routesSrc.includes('/api/github/workflows'), '路由已注册 workflow 文件接口');
+ok(routesSrc.includes('.github/workflows'), '按 .github/workflows 目录取文件');
+
 ok(client.includes('// ---- [Bundled: pr-lanes.js] ----'), 'pr-lanes 已打进 bundle');
 ok(client.includes('.ghsp-lane-chip'), '泳道标签样式已打包');
 ok(client.includes('.ghsp-mode-btn.active'), '视图切换样式已打包');
@@ -304,15 +314,12 @@ ok(/\.ghsp-head\{[^}]*border-radius:12px/.test(client), '头部卡片圆角规�
 ok(/\.ghsp-card\{[^}]*background:var\(--dsw-specific-menu/.test(client), '浮窗卡片用宿主半透明菜单底（跟随系统透明）');
 ok(/\.ghsp-card\{[^}]*backdrop-filter/.test(client), '浮窗卡片带背景模糊');
 ok(/\.ghsp-pill\{[^}]*background:var\(--dsw-specific-menu/.test(client), '浮窗药丸同样跟随透明');
-ok(client.includes('function CiPipelineStrip'), '浮窗里有 CI/CD 紧凑条组件');
-ok(client.includes('.ghsp-ci-head'), '紧凑条样式已打包');
 ok(client.includes('function WorkspaceBlock'), '浮窗里有「项目 / worktree」区块');
 ok(client.includes('function overlayTabBar'), '浮窗有 tab 切换（功能 / 项目 / CI-CD）');
 ok(client.includes('.ghsp-otab.active'), 'tab 选中样式已打包');
 ok(client.includes('.ghsp-oscard'), '每块一张卡片：卡片样式已打包');
 ok((client.match(/overlayTab === "project"/g) || []).length > 0, 'tab 切换会按需渲染项目视图');
 ok(client.includes('ghsp-oscard-link'), 'CI/CD 卡片可点击（有可点样式）');
-ok(client.includes('点击在 GitHub 打开这次运行'), '卡片 tooltip 说明点击去向');
 ok(client.includes('props.onOpenUrl'), '点击走宿主提供的打开逻辑（内部浏览器），不是硬 window.open');
 ok(client.includes('.ghsp-pcard'), '项目卡样式已打包');
 ok(client.includes('function Avatar'), '头像组件已打包');
