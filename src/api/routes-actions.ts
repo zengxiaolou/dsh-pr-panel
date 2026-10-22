@@ -1525,11 +1525,11 @@ export function registerActionRoutes(
     },
   });
 
-  // 13d. 当前工作区信息：仓库 + 分支 + git worktree 列表
+  // 13d. 工作区信息：本会话涉及的每个项目 + 各自的 worktree
   //
-  // 为什么单独一条：面板/浮窗都在回答「PR 怎么样」，但有一类错误是人造成的——
-  // 在错的 worktree 里改了文件。把「这个会话在哪个仓库、有几个 worktree、现在在哪个」
-  // 摆出来，比事后排查便宜得多。
+  // 一个会话里可能同时有多个项目（聚合根工作区），每个项目又有自己的 worktree 组。
+  // 所以不能只回答「工作区仓库」——要按「本会话用到的仓库」逐个回答，
+  // 并把仓库名映射到本地路径（本地没有副本时如实说明，不伪造）。
   const workspaceInfoCache = new Map<string, { at: number; data: any }>();
   bindRoute({
     kind: 'exact',
@@ -1542,53 +1542,96 @@ export function registerActionRoutes(
       try {
         const url = new URL(req.url || '', 'http://127.0.0.1');
         const cwd = url.searchParams.get('cwd') || undefined;
+        // 本会话涉及的仓库（owner/repo，逗号分隔）。为空时退回「工作区仓库」一个。
+        const wanted = (url.searchParams.get('repos') || '')
+          .split(',')
+          .map((r) => r.trim())
+          .filter((r) => /^[A-Za-z0-9_][A-Za-z0-9_.-]*\/[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(r))
+          .slice(0, 8);
+        const force = url.searchParams.get('refresh') === '1';
+
         const repoRoot = executor.resolveWorkspaceRepoRoot(cwd);
         if (!repoRoot) {
           sendJson(res, 400, { ok: false, error: '当前工作区未关联 Git 仓库' });
           return;
         }
-        const root = repoRoot.root;
-        const hit = workspaceInfoCache.get(root);
-        if (hit && Date.now() - hit.at < 10_000) {
+        const workspacePath = repoRoot.workspacePath || cwd || repoRoot.root;
+        const candidates = repoRoot.candidates && repoRoot.candidates.length ? repoRoot.candidates : [repoRoot.root];
+
+        const cacheKey = `${workspacePath}::${wanted.join(',')}`;
+        const hit = workspaceInfoCache.get(cacheKey);
+        if (!force && hit && Date.now() - hit.at < 10_000) {
           sendJson(res, 200, { ok: true, data: { ...hit.data, cached: true } });
           return;
         }
 
-        const identity = executor.getRepoIdentityFromLocal(root);
-        const status = await executor.getLocalGitStatus(root);
-        const worktrees = (await executor.getGitWorktrees(root)) || [];
-        // 当前 worktree：cwd 落在哪个 path 下（worktree 路径互为前缀时取最长匹配）
-        const targetCwd = cwd ? path.resolve(cwd) : root;
-        let currentIdx = -1;
-        let bestLen = -1;
-        worktrees.forEach((wt, idx) => {
-          const wtPath = path.resolve(wt.path);
-          if (targetCwd === wtPath || targetCwd.startsWith(wtPath + path.sep)) {
-            if (wtPath.length > bestLen) { bestLen = wtPath.length; currentIdx = idx; }
-          }
-        });
+        // 候选路径 → 仓库名（一次身份解析，按需再取分支/worktree）
+        const identityByPath = new Map<string, string>();
+        for (const p of candidates) {
+          const identity = executor.getRepoIdentityFromLocal(p);
+          if (identity?.nameWithOwner) identityByPath.set(p, identity.nameWithOwner);
+        }
 
-        const data = {
-          repo: identity?.nameWithOwner || '',
-          root,
-          branch: status?.branch || '',
-          dirtyCount: status?.dirtyCount ?? null,
-          worktrees: worktrees.map((wt, idx) => ({
-            path: wt.path,
-            name: path.basename(wt.path),
-            branch: wt.branch,
-            head: wt.head ? wt.head.slice(0, 7) : '',
-            isCurrent: idx === currentIdx,
-            isMain: idx === 0,
-            detached: wt.detached,
-            locked: wt.locked,
-            prunable: wt.prunable,
-          })),
-        };
-        workspaceInfoCache.set(root, { at: Date.now(), data });
+        const wantedSet = wanted.length ? new Set(wanted.map((r) => r.toLowerCase())) : null;
+        const targets: Array<{ repo: string; localPath: string | null }> = [];
+        // 先放「本会话提到的仓库」：本地有副本的标上路径，没有的留 null
+        if (wantedSet) {
+          for (const repo of wanted) {
+            let localPath: string | null = null;
+            for (const [p, name] of identityByPath) {
+              if (name.toLowerCase() === repo.toLowerCase()) { localPath = p; break; }
+            }
+            targets.push({ repo, localPath });
+          }
+        } else {
+          for (const p of candidates) {
+            const name = identityByPath.get(p);
+            if (name) targets.push({ repo: name, localPath: p });
+          }
+        }
+
+        const targetCwd = path.resolve(cwd || workspacePath);
+        const projects: any[] = [];
+        for (const target of targets.slice(0, 8)) {
+          if (!target.localPath) {
+            projects.push({ repo: target.repo, localPath: null, branch: '', dirtyCount: null, worktrees: [] });
+            continue;
+          }
+          const status = await executor.getLocalGitStatus(target.localPath);
+          const worktrees = (await executor.getGitWorktrees(target.localPath)) || [];
+          // 当前 worktree：cwd 落在哪个路径下（多级取最长，避免 app 与 app-hotfix 互认）
+          let currentIdx = -1;
+          let bestLen = -1;
+          worktrees.forEach((wt, idx) => {
+            const wtPath = path.resolve(wt.path);
+            if (targetCwd === wtPath || targetCwd.startsWith(wtPath + path.sep)) {
+              if (wtPath.length > bestLen) { bestLen = wtPath.length; currentIdx = idx; }
+            }
+          });
+          projects.push({
+            repo: target.repo,
+            localPath: target.localPath,
+            branch: status?.branch || '',
+            dirtyCount: status?.dirtyCount ?? null,
+            worktrees: worktrees.map((wt, idx) => ({
+              path: wt.path,
+              name: path.basename(wt.path),
+              branch: wt.branch,
+              head: wt.head ? wt.head.slice(0, 7) : '',
+              isCurrent: idx === currentIdx,
+              isMain: idx === 0,
+              detached: wt.detached,
+              locked: wt.locked,
+              prunable: wt.prunable,
+            })),
+          });
+        }
+
+        const data = { workspacePath, projects };
+        workspaceInfoCache.set(cacheKey, { at: Date.now(), data });
         if (workspaceInfoCache.size > 40) {
           const oldest = workspaceInfoCache.keys().next().value;
-          if (typeof oldest === 'string' && oldest !== root) workspaceInfoCache.delete(oldest);
+          if (typeof oldest === 'string' && oldest !== cacheKey) workspaceInfoCache.delete(oldest);
         }
         sendJson(res, 200, { ok: true, data });
       } catch (err: any) {

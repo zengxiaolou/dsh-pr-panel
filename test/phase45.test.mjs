@@ -225,6 +225,17 @@ const locked = parseGitWorktreeList(['worktree /tmp/lk', 'HEAD abc', 'branch ref
 eq(locked[0].locked, true, 'locked 识别');
 eq(parseGitWorktreeList('').length, 0, '空输入不炸');
 
+console.log('\n--- 4.9 项目 / worktree：多项目 + 截断 ---');
+const { limitWorktrees } = await import('../lib/ui/session-pr-panel.js');
+const many = Array.from({ length: 14 }, (_, i) => ({ name: 'wt' + i, isCurrent: i === 7, isMain: i === 0 }));
+const limited = limitWorktrees(many, 8);
+eq(limited.shown.length, 8, '最多展示 8 个');
+eq(limited.hidden, 6, '其余折成「另 N 个」');
+eq(limited.shown[0].name, 'wt7', '当前 worktree 排第一');
+eq(limited.shown[1].name, 'wt0', '主 worktree 排第二');
+eq(limitWorktrees([{ name: 'a' }], 8).hidden, 0, '不超上限时没有隐藏项');
+eq(limitWorktrees(null, 8).shown.length, 0, '空输入不炸');
+
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
 ok(client.includes('// ---- [Bundled: pr-lanes.js] ----'), 'pr-lanes 已打进 bundle');
@@ -239,6 +250,9 @@ ok(client.includes('.ghsp-ci-head'), '紧凑条样式已打包');
 ok(client.includes('function WorkspaceBlock'), '浮窗里有「项目 / worktree」区块');
 ok(client.includes('.ghsp-ws-row.current'), '当前 worktree 有高亮样式');
 ok(client.includes('/api/github/workspace-info'), '区块走工作区信息接口');
+ok(client.includes('readJsonSafe'), '非 JSON 响应会被翻译成可行动的提示（不是解析报错）');
+ok(client.includes('repos='), '请求会带上本会话涉及的仓库列表');
+ok(client.includes('本地无副本'), '本地没有克隆的仓库如实标注');
 ok(client.includes('/api/github/ci-pipeline'), '紧凑条走仓库级流水线接口');
 ok(client.includes('prefers-reduced-transparency'), '系统减弱透明度时有回退（与宿主一致）');
 ok(!/body:not\(\[data-ds-dark-theme\]\) \.ghsp-card\{background:color-mix/.test(client), '不再有覆盖成不透明底色的浅色规则');
