@@ -108,6 +108,13 @@ export const SESSION_PR_CSS = `
 .ghsp-run-name{font-size:11px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ghsp-run-sub{font-size:9px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ghsp-run-right{flex:0 0 auto;font-size:10px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}
+.ghsp-prruns{margin-top:6px}
+.ghsp-prruns-head{display:flex;align-items:baseline;gap:6px;min-width:0;padding:0 2px}
+.ghsp-prruns-num{flex:0 0 auto;font-size:10px;font-weight:600;color:var(--dsw-alias-label-secondary)}
+.ghsp-prruns-branch{flex:1;min-width:0;font-size:10px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghsp-run-sub.empty{padding:2px 4px}
+.ghsp-run-phase{display:inline-block;margin-right:4px;padding:0 3px;border-radius:3px;font-size:8px;border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary)}
+.ghsp-run-phase.after{color:var(--dsw-alias-state-success-primary,#1a7f37);border-color:currentColor}
 
 /* 浮窗里的 CI/CD 紧凑条 */
 .ghsp-ci{border-top:1px solid var(--dsw-alias-border-l2);border-bottom:1px solid var(--dsw-alias-border-l2)}
@@ -1198,87 +1205,111 @@ function WorkspaceBlock(props: any) {
  * 而是「这次触发跑到第几步了」——运行中给 3/13 与当前步骤名，结束后给多久前完成。
  * 数据来自 /api/github/ci-pipeline（只对运行中的 run 拉 jobs/steps）。
  */
+/**
+ * 浮窗里的「CI/CD」视图：本会话 PR 触发的 Actions，以及走到第几步。
+ *
+ * 口径（容易搞错，别再回退）：按每个 PR 的 head 分支取运行，
+ * 不是「仓库最近在跑什么」——用户要看的是自己这批 PR 的流水线。
+ */
 function ActionsBlock(props: any) {
-  var repos = Array.isArray(props && props.repos) ? props.repos : [];
-  var [state, setState] = React.useState({ loading: true, items: [] as any[], errors: [] as any[] });
+  var items = Array.isArray(props && props.items) ? props.items : [];
+  // 每个 PR 一行：repo#head，重复合并
+  var pairs: any[] = [];
+  var seen: any = {};
+  items.forEach(function (it: any) {
+    var repo = String((it && it.repo) || '');
+    var br = String((it && it.headRefName) || '');
+    if (!repo || !br) return;
+    var key = repo + '#' + br;
+    if (seen[key]) { seen[key].prs.push(it.number); return; }
+    var entry = { repo: repo, branch: br, base: String((it && it.baseRefName) || ''), mergedAt: String((it && it.mergedAt) || ''), prs: [it.number] };
+    seen[key] = entry;
+    pairs.push(entry);
+  });
+  var [state, setState] = React.useState({ loading: true, groups: [] as any[], error: null as string | null });
 
   React.useEffect(function () {
-    if (!repos.length) return;
+    if (!pairs.length) return;
     var alive = true;
-    setState(function (prev: any) { return { loading: prev.items.length === 0, items: prev.items, errors: prev.errors }; });
-    Promise.all(repos.slice(0, 6).map(function (repo: string) {
-      var qs = "/api/github/ci-pipeline?limit=4&repo=" + encodeURIComponent(repo);
-      return fetchJsonCached(qs, 15_000)
-        .then(function (json: any) { return { repo: repo, json: json }; })
-        .catch(function (err: any) { return { repo: repo, json: { ok: false, error: String((err && err.message) || err) } }; });
-    })).then(function (results: any[]) {
-      if (!alive) return;
-      var items: any[] = [];
-      var errors: any[] = [];
-      results.forEach(function (r: any) {
-        var data = r.json && r.json.ok ? r.json.data : null;
-        if (!data || data.available === false) {
-          errors.push({ repo: r.repo, error: (data && data.reason) || (r.json && r.json.error) || '读不到 Actions' });
-          return;
-        }
-        var wfs = (data.workflows || []).filter(function (wf: any) {
-          var l = wf.latest || {};
-          return l.status || l.conclusion; // 没跑过的 workflow 不占位置
-        });
-        if (wfs.length) items.push({ repo: r.repo, workflows: wfs, totals: data.totals || {} });
-        else errors.push({ repo: r.repo, error: '没有运行记录' });
+    var qs = "/api/github/pr-runs?pairs=" + encodeURIComponent(pairs.map(function (p: any) {
+      return [p.repo, p.branch, p.base, p.mergedAt].join('#');
+    }).join('|'));
+    fetchJsonCached(qs, 15_000)
+      .then(function (json: any) {
+        if (!alive) return;
+        if (json && json.ok && json.data) setState({ loading: false, groups: json.data.groups || [], error: null });
+        else setState({ loading: false, groups: [], error: (json && (json.error || json.message)) || '读取失败' });
+      })
+      .catch(function (err: any) {
+        if (!alive) return;
+        setState({ loading: false, groups: [], error: String((err && err.message) || err) });
       });
-      setState({ loading: false, items: items, errors: errors });
-    });
     return function () { alive = false; };
-  }, [repos.join(",")]);
+  }, [pairs.map(function (p: any) { return p.repo + '#' + p.branch + '#' + p.base + '#' + p.mergedAt; }).join('|')]);
 
-  if (!repos.length) return React.createElement("div", { className: "ghsp-empty2" }, "还没有关联仓库");
+  if (!items.length) return React.createElement("div", { className: "ghsp-empty2" }, "本会话还没有提交 PR");
   if (state.loading) return React.createElement("div", { className: "ghsp-empty2" }, "读取中…");
-  if (!state.items.length && !state.errors.length) return React.createElement("div", { className: "ghsp-empty2" }, "暂无 Actions 运行");
+  if (state.error) return React.createElement("div", { className: "ghsp-empty2" }, state.error);
 
   var openUrl = function (url: string) {
     if (!url) return;
     if (props && typeof props.onOpenUrl === "function") props.onOpenUrl(url);
     else { try { window.open(url, "_blank", "noopener,noreferrer"); } catch (e) { /* 忽略 */ } }
   };
+  var shortName = function (repo: string) { var p = String(repo || '').split('/'); return p[p.length - 1]; };
+
+  // 按仓库分组展示
+  var byRepo: any[] = [];
+  var repoIndex: any = {};
+  state.groups.forEach(function (g: any) {
+    if (!repoIndex[g.repo]) { repoIndex[g.repo] = { repo: g.repo, groups: [] }; byRepo.push(repoIndex[g.repo]); }
+    repoIndex[g.repo].groups.push(g);
+  });
 
   return React.createElement("div", { className: "ghsp-ocards" },
-    state.items.map(function (entry: any) {
+    byRepo.map(function (entry: any) {
       return React.createElement("div", { key: entry.repo, className: "ghsp-pcard" },
         React.createElement("div", { className: "ghsp-pcard-top" },
-          React.createElement("span", { className: "ghsp-pcard-repo", title: entry.repo }, String(entry.repo).split("/").pop()),
-          React.createElement("span", { className: "ghsp-pcard-wt" },
-            (entry.totals.running ? entry.totals.running + " 运行中 · " : "")
-            + (entry.totals.failed ? entry.totals.failed + " 失败" : ""))),
-        React.createElement("div", { className: "ghsp-run-list" },
-          entry.workflows.map(function (wf: any) {
-            var l = wf.latest || {};
-            var line = ciWorkflowLine(wf);
-            var active = l.active;
-            var right = active && active.stepsTotal
-              ? Math.min(active.stepsDone + 1, active.stepsTotal) + "/" + active.stepsTotal
-              : line.text;
-            return React.createElement("button", {
-              key: String(wf.id || wf.name),
-              type: "button",
-              className: "ghsp-run-row",
-              title: line.title + (l.url ? "\n点击打开这次运行" : ""),
-              onClick: function () { openUrl(String(l.url || "")); },
-            },
-              React.createElement("span", { className: "ghsp-dot " + (line.tone === 'fail' ? 'fail' : line.tone === 'pending' ? 'pending' : line.tone === 'none' ? 'none' : 'pass') }),
-              React.createElement("span", { className: "ghsp-run-main" },
-                React.createElement("span", { className: "ghsp-run-name" }, String(wf.name || "workflow")),
-                React.createElement("span", { className: "ghsp-run-sub" },
-                  (l.headBranch ? l.headBranch + " · " : "")
-                  + (active && active.stepName ? active.stepName : (l.status === 'in_progress' ? '运行中' : '')))),
-              React.createElement("span", { className: "ghsp-run-right" }, right),
-              React.createElement("span", { className: "ghsp-oscard-go" }, "↗"));
-          })));
-    }),
-    state.errors.map(function (e: any) {
-      return React.createElement("div", { key: "err:" + e.repo, className: "ghsp-empty2" },
-        String(e.repo).split("/").pop() + "：" + e.error);
+          React.createElement("span", { className: "ghsp-pcard-repo", title: entry.repo }, shortName(entry.repo)),
+          React.createElement("span", { className: "ghsp-pcard-wt" }, entry.groups.length + " 个 PR 分支")),
+        entry.groups.map(function (g: any) {
+          var pair = seen[g.repo + '#' + g.head] || { prs: [] };
+          var runs = g.runs || [];
+          return React.createElement("div", { key: g.repo + g.head, className: "ghsp-prruns" },
+            React.createElement("div", { className: "ghsp-prruns-head" },
+              React.createElement("span", { className: "ghsp-prruns-num" }, pair.prs.length ? '#' + pair.prs.join(' #') : '#?'),
+              React.createElement("span", { className: "ghsp-prruns-branch", title: (g.head || '') + ' → ' + (g.base || '') },
+                (g.head || '') + (g.base ? " → " + g.base : ""))),
+            runs.length === 0
+              ? React.createElement("div", { className: "ghsp-run-sub empty" }, "这个 PR 还没有触发运行")
+              : runs.map(function (run: any) {
+                  var tone = run.status === 'in_progress' || run.status === 'queued'
+                    ? 'pending'
+                    : (run.conclusion === 'success' ? 'pass' : (run.conclusion === 'cancelled' || run.conclusion === 'skipped') ? 'none' : 'fail');
+                  var active = run.active;
+                  var right = active && active.stepsTotal
+                    ? Math.min(active.stepsDone + 1, active.stepsTotal) + "/" + active.stepsTotal
+                    : (run.status === 'in_progress' ? '运行中' : ciWorkflowLine({ latest: { status: run.status, conclusion: run.conclusion, completedAt: run.updatedAt } }).text);
+                  return React.createElement("button", {
+                    key: String(run.id),
+                    type: "button",
+                    className: "ghsp-run-row",
+                    title: (run.name || '') + (run.url ? "\n点击打开这次运行" : ""),
+                    onClick: function () { openUrl(String(run.url || '')); },
+                  },
+                    React.createElement("span", { className: "ghsp-dot " + tone }),
+                    React.createElement("span", { className: "ghsp-run-main" },
+                      React.createElement("span", { className: "ghsp-run-name" },
+                        run.phase === 'after'
+                          ? React.createElement("span", { className: "ghsp-run-phase after" }, "合并后")
+                          : React.createElement("span", { className: "ghsp-run-phase" }, "PR 校验"),
+                        String(run.name || 'workflow')),
+                      React.createElement("span", { className: "ghsp-run-sub" },
+                        active && active.stepName ? active.stepName : (run.event || ''))),
+                    React.createElement("span", { className: "ghsp-run-right" }, right),
+                    React.createElement("span", { className: "ghsp-oscard-go" }, "↗"));
+                }));
+        }));
     }));
 }
 
@@ -1651,11 +1682,7 @@ function SessionPrOverlayInner(props: any) {
             }).filter(Boolean),
           })
         : (overlayTab === "ci"
-          ? React.createElement(ActionsBlock, {
-              repos: items.map(function (it: any) { return String((it && it.repo) || ""); })
-                .filter(function (r: string, i: number, arr: string[]) { return r && arr.indexOf(r) === i; }),
-              onOpenUrl: props.onOpenUrl,
-            })
+          ? React.createElement(ActionsBlock, { items: items, onOpenUrl: props.onOpenUrl })
           : null),
       // 泳道而不是平铺：Dev→Test→Release→Prod 从上到下就是功能推进的方向。
       // 首帧 lite 只有编号（还没有 stage），先平铺，数据齐了再分段，避免闪一个假的 Other 段。

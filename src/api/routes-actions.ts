@@ -1562,7 +1562,122 @@ function findRepoPathUnder(workspacePath: string, wanted: string, identityOf: (p
   return null;
 }
 
-  // 13d. 工作区信息：本会话涉及的每个项目 + 各自的 worktree
+  // 13f. 本会话 PR 相关的 Actions：PR 校验（head 分支）+ 合并后流水线（base 分支）
+  //
+  // 为什么要两段：wallet 这类仓库的 workflow 只对 test/release 触发 PR 校验，
+  // 合到 development 的 PR 自己没有任何 run；真正"PR 完成后跑起来"的是 base 分支上的
+  // push 运行。只按 head 分支查会全空，只按仓库查又会混进无关的运行。
+  const prRunsCache = new Map<string, { at: number; data: any }>();
+  bindRoute({
+    kind: 'exact',
+    path: '/api/github/pr-runs',
+    handler: async (req: any, res: any) => {
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { ok: false, message: '仅支持 GET 请求' });
+        return;
+      }
+      try {
+        const url = new URL(req.url || '', 'http://127.0.0.1');
+        // pairs: repo#head#base#mergedAt（后三段可空）
+        const pairs: Array<{ repo: string; head: string; base: string; mergedAt: string }> = [];
+        const seen = new Set<string>();
+        for (const raw of (url.searchParams.get('pairs') || '').split('|')) {
+          const parts = String(raw || '').split('#');
+          const repo = (parts[0] || '').trim();
+          if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]*\/[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(repo)) continue;
+          const key = repo + '#' + (parts[1] || '');
+          if (seen.has(key)) continue;
+          seen.add(key);
+          pairs.push({ repo, head: (parts[1] || '').trim(), base: (parts[2] || '').trim(), mergedAt: (parts[3] || '').trim() });
+          if (pairs.length >= 10) break;
+        }
+        if (!pairs.length) {
+          sendJson(res, 400, { ok: false, error: '缺少合法的 pairs 参数' });
+          return;
+        }
+        const cacheKey = pairs.map((p) => p.repo + '#' + p.head + '#' + p.base + '#' + p.mergedAt).join('|');
+        const hit = prRunsCache.get(cacheKey);
+        if (hit && Date.now() - hit.at < 15_000) {
+          sendJson(res, 200, { ok: true, data: { ...hit.data, cached: true } });
+          return;
+        }
+
+        const fetchRuns = async (repo: string, branch: string, perPage: number) => {
+          const r = await executor.run<any>(
+            ['api', `repos/${repo}/actions/runs?branch=${encodeURIComponent(branch)}&per_page=${perPage}`,
+              '--jq', '[.workflow_runs[] | {id, name, status, conclusion, url: .html_url, event, createdAt: .created_at, updatedAt: .updated_at}]'],
+            { timeoutMs: 20_000, maxOutputChars: 160_000 },
+          );
+          const arr = parseGhJson(r);
+          return Array.isArray(arr) ? arr : [];
+        };
+        const withActive = async (repo: string, runs: any[], phase: string) => {
+          const out: any[] = [];
+          for (const run of runs) {
+            let active: any = null;
+            if (run.status === 'in_progress' || run.status === 'queued') {
+              const jr = await executor.run<any>(
+                ['api', `repos/${repo}/actions/runs/${run.id}/jobs?per_page=50`,
+                  '--jq', '[.jobs[] | {name, status, conclusion, steps: [.steps[]? | {number, name, status}]}]'],
+                { timeoutMs: 20_000, maxOutputChars: 200_000 },
+              );
+              const jobs = parseGhJson(jr);
+              if (Array.isArray(jobs)) active = pickActiveProgress(jobs);
+            }
+            out.push({
+              id: run.id, name: run.name, status: String(run.status || ''),
+              conclusion: String(run.conclusion || ''), url: String(run.url || ''),
+              event: String(run.event || ''), createdAt: run.createdAt || '',
+              updatedAt: run.updatedAt || '', active, phase,
+            });
+          }
+          return out;
+        };
+
+        const groups = await mapLimitFn(pairs, 3, async (pair) => {
+          const result: any = { repo: pair.repo, head: pair.head, base: pair.base, runs: [] };
+          // 1) PR 校验：head 分支上的 pull_request 运行
+          if (pair.head) {
+            const headRuns = (await fetchRuns(pair.repo, pair.head, 4)).filter((r: any) => true);
+            result.runs.push(...await withActive(pair.repo, headRuns.slice(0, 3), 'pr'));
+          }
+          // 2) 合并后：base 分支上、合并时间之后的 push 运行
+          if (pair.base) {
+            const baseRuns = await fetchRuns(pair.repo, pair.base, 8);
+            const since = pair.mergedAt ? Date.parse(pair.mergedAt) - 60_000 : 0;
+            const windowEnd = since ? since + 30 * 60_000 : 0; // 合并后 30 分钟内算"这次合并触发的"
+            const inWindow = baseRuns.filter((r: any) => {
+              const t = Date.parse(r.createdAt || '');
+              if (!isFinite(t)) return false;
+              if (!since) return true;
+              return t >= since && t <= windowEnd;
+            });
+            // 窗口内没有（比如 workflow 只在特定分支触发）就取合并后的第一条，标成"最近"
+            const after = inWindow.length
+              ? inWindow.slice(0, 3)
+              : baseRuns.filter((r: any) => {
+                  const t = Date.parse(r.createdAt || '');
+                  return isFinite(t) && (!since || t >= since);
+                }).slice(0, 1);
+            result.runs.push(...await withActive(pair.repo, after, 'after'));
+          }
+          return result;
+        });
+
+        const data = { at: Date.now(), groups };
+        prRunsCache.set(cacheKey, { at: Date.now(), data });
+        if (prRunsCache.size > 40) {
+          const oldest = prRunsCache.keys().next().value;
+          if (typeof oldest === 'string' && oldest !== cacheKey) prRunsCache.delete(oldest);
+        }
+        sendJson(res, 200, { ok: true, data });
+      } catch (err: any) {
+        sendJson(res, 500, { ok: false, error: err?.message || '读取 PR 运行失败' });
+      }
+    },
+  });
+
+  // 13d. 工作区信息  // 13d. 工作区信息：本会话涉及的每个项目 + 各自的 worktree
   //
   // 一个会话里可能同时有多个项目（聚合根工作区），每个项目又有自己的 worktree 组。
   // 所以不能只回答「工作区仓库」——要按「本会话用到的仓库」逐个回答，

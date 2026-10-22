@@ -320,14 +320,14 @@ ok(tiny.maxHeight >= 180, '矮视口仍保底 180 高');
 
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
-console.log('\n--- 4.12 CI/CD tab 展示 Actions 运行（走到第几步） ---');
+console.log('\n--- 4.12 CI/CD tab：本会话 PR 的 Actions（PR 校验 + 合并后） ---');
 ok(client.includes('function ActionsBlock'), 'CI/CD tab 用 Actions 运行列表');
-ok(client.includes('/api/github/ci-pipeline'), '走流水线接口（含 active 步骤）');
-ok(client.includes('.ghsp-run-row'), '运行行样式已打包');
-ok(client.includes('ghsp-run-right'), '右侧显示第 n/m 步');
-ok(!client.includes('function WorkflowFilesBlock'), '配置文件列表已移除（用户要的是运行态）');
-const routesForCi = fs.readFileSync(path.join(dirname, '../lib/api/routes-actions.js'), 'utf8');
-ok(!routesForCi.includes('/api/github/workflows'), '无用的 workflow 文件路由已删除');
+ok(client.includes('/api/github/pr-runs'), '按 PR 取运行，不是仓库级');
+ok(client.includes('ghsp-run-phase'), '每条运行标出阶段');
+ok(client.includes('合并后'), '区分「PR 校验」与「合并后」');
+const routesCi = fs.readFileSync(path.join(dirname, '../lib/api/routes-actions.js'), 'utf8');
+ok(routesCi.includes('/api/github/pr-runs'), '路由已注册 PR 运行接口');
+ok(/actions\/runs\?branch=/.test(routesCi), '按分支过滤运行（head 与 base）');
 
 console.log('\n━━━━━━━━━ phase45 汇总 ━━━━━━━━━');
 console.log(`通过 ${pass}/${total}`);
