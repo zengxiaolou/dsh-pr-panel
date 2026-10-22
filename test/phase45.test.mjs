@@ -295,6 +295,29 @@ eq(avatarSrc('', 16), '', '空 URL 返回空（调用方退化成首字母）');
 eq(avatarSrc(null, 16), '', 'null 不炸');
 eq(avatarSrc('https://x/y', 8), 'https://x/y?s=12', '尺寸下限 12（太小会糊）');
 
+console.log('\n--- 4.13 胶囊展开方向：贴边、按空间选向 ---');
+const { cardPlacementFor } = await import('../lib/ui/session-pr-panel.js');
+// 默认位置（右下角，right 20 / bottom 148）：空间在上方，应向上展开且右对齐
+const dflt = cardPlacementFor(null, 1440, 900);
+eq(dflt.openDown, false, '默认右下角的胶囊：向上展开（下方只有 148px）');
+eq(dflt.openRight, false, '默认位置右侧空间不足 → 向左展开，卡右边缘贴胶囊右边缘');
+eq(dflt.style.right, (1440 - (1440 - 20)) + 'px', '右边缘与胶囊对齐（right=20）');
+eq(dflt.style.width, '372px', '宽度固定 372');
+ok(dflt.maxHeight <= 470, '最大高度不超过 470');
+// 拖到左上角：右侧空间充足 → 向右展开、向下展开
+const topLeft = cardPlacementFor({ x: 40, y: 60 }, 1440, 900);
+eq(topLeft.openRight, true, '胶囊在左侧时向右展开');
+eq(topLeft.openDown, true, '胶囊在上方时向下展开');
+eq(topLeft.style.left, (40 + 110) + 'px', '左边缘贴胶囊右边缘');
+eq(topLeft.style.top, (60 + 30) + 'px', '上边缘贴胶囊下边缘');
+// 拖到屏幕正中间：两侧都不够宽 → 向左（贴右），纵向按空间大的一侧
+const mid = cardPlacementFor({ x: 700, y: 400 }, 1440, 900);
+eq(mid.openRight, false, '中间位置右侧不够 372 → 向左');
+ok(mid.maxHeight >= 180, '极小空间也有可用高度（下限 180）');
+// 视口很矮时不能把卡片挤成 0 高
+const tiny = cardPlacementFor({ x: 100, y: 100 }, 800, 300);
+ok(tiny.maxHeight >= 180, '矮视口仍保底 180 高');
+
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
 console.log('\n--- 4.12 CI/CD tab 展示 workflow 文件链接 ---');
