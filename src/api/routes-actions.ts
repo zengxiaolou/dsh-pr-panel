@@ -1161,6 +1161,7 @@ export function registerActionRoutes(
           isDraft: Boolean(meta?.isDraft),
           url: meta?.url || `https://github.com/${ref.repo}/pull/${ref.number}`,
           author: meta?.author?.login || (typeof meta?.author === 'string' ? meta.author : ''),
+          authorAvatarUrl: meta?.author?.avatarUrl || '',
           baseRefName: meta?.baseRefName || '',
           headRefName: meta?.headRefName || '',
           additions: Number(meta?.additions) || 0,
@@ -1207,7 +1208,7 @@ export function registerActionRoutes(
           const parts = repo.split('/');
           if (parts.length !== 2) return null;
           const aliases = list.map((ref, idx) =>
-            `  p${idx}: pullRequest(number: ${Number(ref.number)}) { number title state isDraft url author { login } baseRefName headRefName additions deletions changedFiles reviewDecision labels(first: 20) { nodes { name } } statusCheckRollup { state } createdAt updatedAt mergedAt }`,
+            `  p${idx}: pullRequest(number: ${Number(ref.number)}) { number title state isDraft url author { login avatarUrl } baseRefName headRefName additions deletions changedFiles reviewDecision labels(first: 20) { nodes { name } } statusCheckRollup { state } createdAt updatedAt mergedAt }`,
           ).join('\n');
           const query = `query {\n  repository(owner: ${JSON.stringify(parts[0])}, name: ${JSON.stringify(parts[1])}) {\n${aliases}\n  }\n}`;
           // 快路径：进程内复用的 HTTP 通道（同一端点反复取，省掉每次 gh 的握手）
@@ -1754,7 +1755,7 @@ function findRepoPathUnder(workspacePath: string, wanted: string, identityOf: (p
       number title body state isDraft reviewDecision mergeable mergeStateStatus
       additions deletions changedFiles baseRefName headRefName headRefOid url
       createdAt updatedAt mergedAt
-      author { login }
+      author { login avatarUrl }
       autoMergeRequest { enabledAt mergeMethod }
       statusCheckRollup { contexts(first: 100) { nodes {
         __typename
@@ -1978,8 +1979,8 @@ function findRepoPathUnder(workspacePath: string, wanted: string, identityOf: (p
         const threadQuery = `query {
   repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) {
     pullRequest(number: ${number}) {
-      reviews(first: 80) { nodes { author { login } state body submittedAt commit { oid } } }
-      comments(first: 80) { nodes { author { login } body createdAt url } }
+      reviews(first: 80) { nodes { author { login avatarUrl } state body submittedAt commit { oid } } }
+      comments(first: 80) { nodes { author { login avatarUrl } body createdAt url } }
       commits(last: 30) { nodes { commit { oid messageHeadline committedDate authors(first: 3) { nodes { name email user { login } } } } } }
     }
   }
@@ -1991,10 +1992,10 @@ function findRepoPathUnder(workspacePath: string, wanted: string, identityOf: (p
         if (viaHttp.ok && viaHttp.data && (viaHttp.data as any)?.data?.repository?.pullRequest) {
           const node = (viaHttp.data as any).data.repository.pullRequest;
           reviews = (node.reviews?.nodes || []).map((r: any) => ({
-            author: { login: r?.author?.login || '' }, state: r?.state || '', body: r?.body || '', submittedAt: r?.submittedAt || '', commit: { oid: r?.commit?.oid || '' },
+            author: { login: r?.author?.login || '', avatarUrl: r?.author?.avatarUrl || '' }, state: r?.state || '', body: r?.body || '', submittedAt: r?.submittedAt || '', commit: { oid: r?.commit?.oid || '' },
           }));
           comments = (node.comments?.nodes || []).map((c: any) => ({
-            author: { login: c?.author?.login || '' }, body: c?.body || '', createdAt: c?.createdAt || '', url: c?.url || '',
+            author: { login: c?.author?.login || '', avatarUrl: c?.author?.avatarUrl || '' }, body: c?.body || '', createdAt: c?.createdAt || '', url: c?.url || '',
           }));
           commits = (node.commits?.nodes || []).map((c: any) => ({
             oid: c?.commit?.oid || '', messageHeadline: c?.commit?.messageHeadline || '', committedDate: c?.commit?.committedDate || '',

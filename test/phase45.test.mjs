@@ -286,6 +286,15 @@ await fetchJsonCached('/z', 0);
 await fetchJsonCached('/z', 0);
 eq(calls, 2, 'TTL=0 视为不缓存');
 
+console.log('\n--- 4.11 头像：URL 加尺寸 + 渲染点 ---');
+const { avatarSrc } = await import('../lib/ui/session-pr-panel.js');
+eq(avatarSrc('https://avatars.githubusercontent.com/u/1', 16), 'https://avatars.githubusercontent.com/u/1?s=16', '无查询参数时加 ?s=');
+eq(avatarSrc('https://avatars.githubusercontent.com/u/1?v=4', 16), 'https://avatars.githubusercontent.com/u/1?v=4&s=16', '已有参数时用 &');
+eq(avatarSrc('https://avatars.githubusercontent.com/u/1?s=40', 16), 'https://avatars.githubusercontent.com/u/1?s=40', '已有 s= 不重复加');
+eq(avatarSrc('', 16), '', '空 URL 返回空（调用方退化成首字母）');
+eq(avatarSrc(null, 16), '', 'null 不炸');
+eq(avatarSrc('https://x/y', 8), 'https://x/y?s=12', '尺寸下限 12（太小会糊）');
+
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
 ok(client.includes('// ---- [Bundled: pr-lanes.js] ----'), 'pr-lanes 已打进 bundle');
@@ -306,6 +315,9 @@ ok(client.includes('ghsp-oscard-link'), 'CI/CD 卡片可点击（有可点样式
 ok(client.includes('点击在 GitHub 打开这次运行'), '卡片 tooltip 说明点击去向');
 ok(client.includes('props.onOpenUrl'), '点击走宿主提供的打开逻辑（内部浏览器），不是硬 window.open');
 ok(client.includes('.ghsp-pcard'), '项目卡样式已打包');
+ok(client.includes('function Avatar'), '头像组件已打包');
+ok(client.includes('.ghsp-av'), '头像样式已打包');
+ok(client.includes('authorAvatarUrl'), 'PR 行用作者头像');
 ok(client.includes('.ghsp-pcard-dot'), '当前 worktree 标记样式已打包');
 ok(client.includes('/api/github/workspace-info'), '区块走工作区信息接口');
 ok(client.includes('readJsonSafe'), '非 JSON 响应会被翻译成可行动的提示（不是解析报错）');

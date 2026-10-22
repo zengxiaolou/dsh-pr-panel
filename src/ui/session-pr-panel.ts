@@ -115,6 +115,11 @@ export const SESSION_PR_CSS = `
 .ghsp-row{display:flex;flex-direction:column;gap:4px;width:100%;padding:8px 9px;border-radius:8px;border:0;background:transparent;text-align:left;cursor:pointer;color:inherit}
 .ghsp-row:hover{background:var(--dsw-alias-bg-layer-2)}
 .ghsp-row-top{display:flex;align-items:center;gap:6px;min-width:0}
+/* 头像：列表 13px、详情头 14px，统一圆片 */
+.ghsp-av{flex:0 0 auto;border-radius:50%;object-fit:cover;background:var(--dsw-alias-bg-layer-2);vertical-align:middle}
+.ghsp-av.ph{display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary);font-weight:600}
+.ghsp-meta-author{display:inline-flex;align-items:center;gap:4px}
+
 .ghsp-row-num{font-size:11px;font-weight:600;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .ghsp-row-title{flex:1;min-width:0;font-size:12px;line-height:1.35;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ghsp-row-bottom{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dsw-alias-label-secondary)}
@@ -931,6 +936,45 @@ function CiPipelineCard(props: any) {
  * 直接 res.json() 会抛 "Unexpected token 'o'"，用户只看到一串解析错误。
  * 这里把「非 JSON」翻译成一句能行动的话。
  */
+/**
+ * GitHub 头像 URL 加尺寸参数（纯函数，可单测）。
+ * 头像走 avatars.githubusercontent.com，支持 ?s= 指定像素，默认原图很大，
+ * 列表里 16px 的头像没必要拉几百 KB。
+ */
+export function avatarSrc(url: any, size: number): string {
+  var u = String(url == null ? '' : url).trim();
+  if (!u) return '';
+  if (/[?&]s=\d+/.test(u)) return u;
+  return u + (u.indexOf('?') >= 0 ? '&' : '?') + 's=' + Math.max(12, Math.round(size || 16));
+}
+
+/** 头像：有 url 用 img，没有就退化成首字母圆片，避免空白占位 */
+function Avatar(props: any) {
+  var login = String((props && props.login) || '');
+  var size = Number((props && props.size) || 16);
+  var src = avatarSrc(props && props.url, size);
+  if (!src) {
+    if (!login) return null;
+    return React.createElement('span', {
+      className: 'ghsp-av ph',
+      style: { width: size + 'px', height: size + 'px', fontSize: Math.max(8, Math.round(size * 0.55)) + 'px' },
+      title: login,
+    }, login.slice(0, 1).toUpperCase());
+  }
+  return React.createElement('img', {
+    className: 'ghsp-av',
+    src: src,
+    width: size,
+    height: size,
+    loading: 'lazy',
+    decoding: 'async',
+    referrerPolicy: 'no-referrer',
+    alt: login,
+    title: login,
+    onError: function (ev: any) { try { ev.target.style.visibility = 'hidden'; } catch (e) { /* 忽略 */ } },
+  });
+}
+
 function readJsonSafe(res: any): Promise<any> {
   return res.text().then(function (text: string) {
     try {
@@ -2402,7 +2446,8 @@ function SessionPrPanelBody(props: any) {
               return React.createElement("li", { key: item.repo + "#" + item.number },
                 React.createElement("button", { type: "button", className: "ghsp-row", onClick: function () { selectItem(item); } },
                   React.createElement("div", { className: "ghsp-row-top" },
-                    React.createElement("span", { className: "ghsp-row-num" }, "#" + item.number),
+                    React.createElement(Avatar, { login: item.author, url: item.authorAvatarUrl, size: 13 }),
+              React.createElement("span", { className: "ghsp-row-num" }, "#" + item.number),
                     React.createElement("span", { className: "ghsp-row-title" }, pending ? "读取中…" : (item.title || "")),
                     pending ? null : React.createElement("span", { className: "ghsp-badge " + (missing ? "unknown" : prStateKey(item)) }, missing ? "?" : prStateLabel(prStateKey(item)))),
                   React.createElement("div", { className: "ghsp-row-bottom" },
@@ -2714,6 +2759,7 @@ function SessionPrPanelBody(props: any) {
       : shownNotes.map(function (item: any) {
           return React.createElement("div", { key: item.key, className: "ghsp-note" },
             React.createElement("div", { className: "ghsp-note-head" },
+              React.createElement(Avatar, { login: item.author, url: item.authorAvatarUrl, size: 13 }),
               React.createElement("span", { className: "ghsp-note-author" }, "@" + item.author),
               item.kind === "review" ? React.createElement("span", { className: "ghsp-badge " + (String(item.state).toUpperCase() === "APPROVED" ? "open" : String(item.state).toUpperCase() === "CHANGES_REQUESTED" ? "closed" : "draft") }, reviewStateLabel(item.state)) : null,
               React.createElement("span", { className: "ghsp-note-time" }, item.at ? formatRelativeTime(item.at) : ""),
@@ -2779,6 +2825,7 @@ function SessionPrPanelBody(props: any) {
           var tone = String(item.state).toUpperCase() === "CHANGES_REQUESTED" ? "closed" : String(item.state).toUpperCase() === "APPROVED" ? "open" : "draft";
           return React.createElement("div", { key: item.key, className: "ghsp-request" },
             React.createElement("div", { className: "ghsp-note-head" },
+              React.createElement(Avatar, { login: item.author, url: item.authorAvatarUrl, size: 13 }),
               React.createElement("span", { className: "ghsp-note-author" }, "@" + (item.author || "?")),
               React.createElement("span", { className: "ghsp-badge " + tone }, reviewStateLabel(item.state || "COMMENTED")),
               React.createElement("span", { className: "ghsp-note-time" }, item.at ? formatRelativeTime(item.at) : ""),
@@ -2842,13 +2889,14 @@ function SessionPrPanelBody(props: any) {
     if (!login) return;
     var hit = reviewers.filter(function (x) { return x.login === login; })[0];
     if (hit) { hit.state = r.state || hit.state; return; }
-    reviewers.push({ login: login, state: r.state || "COMMENTED" });
+    reviewers.push({ login: login, avatarUrl: (r.author && r.author.avatarUrl) || "", state: r.state || "COMMENTED" });
   });
   var reviewersBody = reviewers.length === 0
     ? (detail.loading ? React.createElement("div", { className: "ghsp-skeleton" }, React.createElement("div", { className: "ghsp-bar w40" })) : React.createElement("div", { className: "ghsp-muted" }, "还没有人评审"))
     : reviewers.map(function (r: any) {
         return React.createElement("div", { key: r.login, className: "ghsp-check" },
           React.createElement("span", { className: "ghsp-dot " + (String(r.state).toUpperCase() === "APPROVED" ? "pass" : String(r.state).toUpperCase() === "CHANGES_REQUESTED" ? "fail" : "none") }),
+          React.createElement(Avatar, { login: r.login, url: r.avatarUrl, size: 13 }),
           React.createElement("span", { className: "ghsp-check-name" }, "@" + r.login),
           React.createElement("span", { className: "ghsp-check-state" }, reviewStateLabel(r.state)));
       });
@@ -2938,7 +2986,11 @@ function SessionPrPanelBody(props: any) {
         headActions),
       React.createElement("h2", { className: "ghsp-title" }, (pr && pr.title) || (headerSkeleton ? "正在读取 PR…" : "PR #" + selected)),
       React.createElement("div", { className: "ghsp-meta" },
-        pr && pr.author && pr.author.login ? React.createElement("span", null, "@" + pr.author.login) : null,
+        pr && pr.author && pr.author.login
+          ? React.createElement("span", { className: "ghsp-meta-author" },
+              React.createElement(Avatar, { login: pr.author.login, url: pr.author.avatarUrl, size: 14 }),
+              React.createElement("span", null, "@" + pr.author.login))
+          : null,
         pr && pr.createdAt ? React.createElement("span", null, formatRelativeTime(pr.createdAt)) : null,
         pr && pr.headRefName
           ? React.createElement("span", { className: "ghsp-branch" },
