@@ -114,3 +114,20 @@ export declare function resolveRepoRoot(dir: string, options?: RepoDiscoveryOpti
  * 这里显式限制在途数量，让延迟可预期，而不是随工作区数量线性劣化。
  */
 export declare function mapLimit<T, R>(items: readonly T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]>;
+/**
+ * 选出「本会话正在用的 worktree」。
+ *
+ * 依据优先级：
+ *  1. branch —— 本会话某个 PR 的 head 分支。git 里一个分支同时只能被一个 worktree
+ *     占用，所以这是最可靠的信号；
+ *  2. cwd —— 会话工作目录落在哪个 worktree 下（多级取最长）；
+ *  3. 都没有时退回主 worktree，并标记 match='none'，别假装是「正在用」。
+ */
+export declare function pickPrimaryWorktree(worktrees: Array<{
+    path: string;
+}> | null | undefined, hintBranches: string[] | null | undefined, cwd?: string): {
+    primary: any | null;
+    match: 'branch' | 'cwd' | 'none';
+    usedCount: number;
+    used: any[];
+};

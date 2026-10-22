@@ -407,3 +407,42 @@ export async function mapLimit<T, R>(
   await Promise.all(workers);
   return results;
 }
+
+/**
+ * 选出「本会话正在用的 worktree」。
+ *
+ * 依据优先级：
+ *  1. branch —— 本会话某个 PR 的 head 分支。git 里一个分支同时只能被一个 worktree
+ *     占用，所以这是最可靠的信号；
+ *  2. cwd —— 会话工作目录落在哪个 worktree 下（多级取最长）；
+ *  3. 都没有时退回主 worktree，并标记 match='none'，别假装是「正在用」。
+ */
+export function pickPrimaryWorktree(
+  worktrees: Array<{ path: string }> | null | undefined,
+  hintBranches: string[] | null | undefined,
+  cwd?: string,
+): { primary: any | null; match: 'branch' | 'cwd' | 'none'; usedCount: number; used: any[] } {
+  const list = Array.isArray(worktrees) ? worktrees : [];
+  const hints = Array.isArray(hintBranches) ? hintBranches : [];
+  const used: any[] = [];
+  for (const branch of hints) {
+    const hit = list.find((w: any) => w && w.branch === branch);
+    if (hit && !used.includes(hit)) used.push(hit);
+  }
+  if (used.length) return { primary: used[0], match: 'branch', usedCount: used.length, used };
+
+  let cwdHit: any = null;
+  let bestLen = -1;
+  if (cwd) {
+    const target = String(cwd);
+    for (const wt of list as any[]) {
+      const wtPath = String(wt && wt.path || '');
+      if (!wtPath) continue;
+      if (target === wtPath || target.startsWith(wtPath + '/')) {
+        if (wtPath.length > bestLen) { bestLen = wtPath.length; cwdHit = wt; }
+      }
+    }
+  }
+  if (cwdHit) return { primary: cwdHit, match: 'cwd', usedCount: 1, used: [cwdHit] };
+  return { primary: list[0] || null, match: 'none', usedCount: 0, used: [] };
+}

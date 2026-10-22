@@ -236,6 +236,30 @@ eq(limited.shown[1].name, 'wt0', '主 worktree 排第二');
 eq(limitWorktrees([{ name: 'a' }], 8).hidden, 0, '不超上限时没有隐藏项');
 eq(limitWorktrees(null, 8).shown.length, 0, '空输入不炸');
 
+console.log('\n--- 4.9b 当前 worktree 选择：分支 > cwd > 主 ---');
+const { pickPrimaryWorktree } = await import('../lib/workspace.js');
+const wtList = [
+  { path: '/w/stars', branch: 'main', name: 'stars' },
+  { path: '/w/worktrees/a', branch: 'fix/a', name: 'a' },
+  { path: '/w/worktrees/b', branch: 'fix/b', name: 'b' },
+];
+const byBranch = pickPrimaryWorktree(wtList, ['fix/b', 'fix/a'], '/w/stars');
+eq(byBranch.match, 'branch', '有分支线索时按分支命中');
+eq(byBranch.primary.name, 'b', '按线索顺序取第一个（最近更新的 PR 在前）');
+eq(byBranch.usedCount, 2, '同一会话用到两个 worktree 时计数为 2');
+const byCwd = pickPrimaryWorktree(wtList, [], '/w/worktrees/a');
+eq(byCwd.match, 'cwd', '没有分支线索时按 cwd 命中');
+eq(byCwd.primary.name, 'a', 'cwd 落在哪个 worktree 就是哪个');
+const none = pickPrimaryWorktree(wtList, [], '/elsewhere');
+eq(none.match, 'none', '两者都没有时不假装正在用');
+eq(none.primary.name, 'stars', '退回主 worktree 供参考');
+eq(pickPrimaryWorktree([], ['fix/a'], '/w').primary, null, '空列表不炸');
+const nested = pickPrimaryWorktree([
+  { path: '/w/app', branch: 'x' },
+  { path: '/w/app-hotfix', branch: 'y' },
+], [], '/w/app-hotfix/src');
+eq(nested.primary.path, '/w/app-hotfix', 'cwd 前缀命中取最长路径（避免 app 与 app-hotfix 互认）');
+
 console.log('\n--- 4.10 客户端接口缓存：命中不重发、并发只发一次、force 绕过 ---');
 const { fetchJsonCached, __resetApiCache } = await import('../lib/ui/session-pr-panel.js');
 let calls = 0;
@@ -281,7 +305,8 @@ ok((client.match(/overlayTab === "project"/g) || []).length > 0, 'tab 切换会�
 ok(client.includes('ghsp-oscard-link'), 'CI/CD 卡片可点击（有可点样式）');
 ok(client.includes('点击在 GitHub 打开这次运行'), '卡片 tooltip 说明点击去向');
 ok(client.includes('props.onOpenUrl'), '点击走宿主提供的打开逻辑（内部浏览器），不是硬 window.open');
-ok(client.includes('.ghsp-ws-row.current'), '当前 worktree 有高亮样式');
+ok(client.includes('.ghsp-pcard'), '项目卡样式已打包');
+ok(client.includes('.ghsp-pcard-dot'), '当前 worktree 标记样式已打包');
 ok(client.includes('/api/github/workspace-info'), '区块走工作区信息接口');
 ok(client.includes('readJsonSafe'), '非 JSON 响应会被翻译成可行动的提示（不是解析报错）');
 ok(client.includes('repos='), '请求会带上本会话涉及的仓库列表');
