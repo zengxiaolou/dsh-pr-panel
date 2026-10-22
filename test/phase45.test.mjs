@@ -236,6 +236,32 @@ eq(limited.shown[1].name, 'wt0', '主 worktree 排第二');
 eq(limitWorktrees([{ name: 'a' }], 8).hidden, 0, '不超上限时没有隐藏项');
 eq(limitWorktrees(null, 8).shown.length, 0, '空输入不炸');
 
+console.log('\n--- 4.10 客户端接口缓存：命中不重发、并发只发一次、force 绕过 ---');
+const { fetchJsonCached, __resetApiCache } = await import('../lib/ui/session-pr-panel.js');
+let calls = 0;
+globalThis.fetch = async () => {
+  calls += 1;
+  return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, data: { v: calls } }) };
+};
+__resetApiCache();
+const a1 = await fetchJsonCached('/x', 60_000);
+const a2 = await fetchJsonCached('/x', 60_000);
+eq(calls, 1, 'TTL 内第二次请求命中缓存');
+eq(a1.data.v, a2.data.v, '返回的是同一份数据');
+await fetchJsonCached('/x', 60_000, true);
+eq(calls, 2, 'force 时绕过缓存');
+__resetApiCache();
+calls = 0;
+const p1 = fetchJsonCached('/y', 60_000);
+const p2 = fetchJsonCached('/y', 60_000);
+await Promise.all([p1, p2]);
+eq(calls, 1, '同一 URL 并发挂载只发一次（in-flight 去重）');
+__resetApiCache();
+calls = 0;
+await fetchJsonCached('/z', 0);
+await fetchJsonCached('/z', 0);
+eq(calls, 2, 'TTL=0 视为不缓存');
+
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
 ok(client.includes('// ---- [Bundled: pr-lanes.js] ----'), 'pr-lanes 已打进 bundle');

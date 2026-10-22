@@ -765,11 +765,10 @@ function CiPipelineCard(props: any) {
       var qs = "/api/github/ci-pipeline?limit=8";
       if (cwd) qs += "&cwd=" + encodeURIComponent(String(cwd));
       if (repo) qs += "&repo=" + encodeURIComponent(String(repo));
-      if (force) qs += "&refresh=1";
       var timer = setTimeout(function () { if (controller) controller.abort(); }, 20000);
       if (!state.data) setState(function (prev: any) { return { loading: true, error: null, data: prev.data }; });
-      fetch(qs, { headers: { accept: "application/json" }, signal: controller ? controller.signal : undefined })
-        .then(function (r) { return r.json(); })
+      // force（用户点 ⟳）绕缓存；轮询命中 15s 缓存则不发请求
+      fetchJsonCached(qs, 15_000, force)
         .then(function (json: any) {
           if (!alive) return;
           if (json && json.ok && json.data) setState({ loading: false, error: null, data: json.data });
@@ -971,6 +970,49 @@ export function limitWorktrees(list: any[], cap = 8): { shown: any[]; hidden: nu
   return { shown: arr.slice(0, limit), hidden: Math.max(0, arr.length - limit) };
 }
 
+/* ------------------------------------------------------------------ *
+ * 客户端接口缓存
+ *
+ * 为什么需要：这些卡片会随 tab 切换、浮窗展开/收起反复挂载，没缓存就每次都发请求。
+ * Host 侧虽然有 10–15s 缓存兜底，但一个来回仍然是「点一下等一帧」。
+ * 这里做两层：TTL 缓存（同 URL 命中直接返回）+ in-flight 去重（并发挂载只发一次）。
+ * ------------------------------------------------------------------ */
+var apiJsonCache = new Map<string, { at: number; data: any }>();
+var apiInflight = new Map<string, Promise<any>>();
+
+/** 测试用：清空缓存与在途表 */
+export function __resetApiCache() {
+  apiJsonCache.clear();
+  apiInflight.clear();
+}
+
+export function fetchJsonCached(url: string, ttlMs: number, force?: boolean): Promise<any> {
+  if (!force) {
+    var hit = apiJsonCache.get(url);
+    if (hit && Date.now() - hit.at < ttlMs) return Promise.resolve(hit.data);
+    var flight = apiInflight.get(url);
+    if (flight) return flight;
+  }
+  var task = fetch(url, { headers: { accept: "application/json" } })
+    .then(readJsonSafe)
+    .then(function (json: any) {
+      if (json && json.ok) {
+        apiJsonCache.set(url, { at: Date.now(), data: json });
+        if (apiJsonCache.size > 40) {
+          var oldest = apiJsonCache.keys().next().value;
+          if (typeof oldest === "string" && oldest !== url) apiJsonCache.delete(oldest);
+        }
+      }
+      apiInflight.delete(url);
+      return json;
+    }, function (err: any) {
+      apiInflight.delete(url);
+      throw err;
+    });
+  apiInflight.set(url, task);
+  return task;
+}
+
 /**
  * 浮窗里的「项目」视图：每个项目一张卡片，卡片里列出它的 worktree。
  * 只负责内容，不画头部——tab 由外层统一提供。
@@ -1011,8 +1053,7 @@ function WorkspaceBlock(props: any) {
     var alive = true;
     var qs = "/api/github/workspace-info?cwd=" + encodeURIComponent(String(cwd));
     if (repos.length) qs += "&repos=" + encodeURIComponent(repos.join(","));
-    fetch(qs, { headers: { accept: "application/json" } })
-      .then(readJsonSafe)
+    fetchJsonCached(qs, 20_000)
       .then(function (json: any) {
         if (!alive) return;
         if (json && json.ok && json.data) setState({ loading: false, data: json.data, error: null });
@@ -1071,8 +1112,7 @@ function CiPipelineStrip(props: any) {
     if (!repo) return;
     var alive = true;
     var qs = "/api/github/ci-pipeline?limit=6&repo=" + encodeURIComponent(String(repo));
-    fetch(qs, { headers: { accept: "application/json" } })
-      .then(readJsonSafe)
+    fetchJsonCached(qs, 15_000)
       .then(function (json: any) {
         if (!alive) return;
         if (json && json.ok && json.data) setState({ loading: false, data: json.data, error: null });

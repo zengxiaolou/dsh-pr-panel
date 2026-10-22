@@ -22,6 +22,9 @@ export declare function limitWorktrees(list: any[], cap?: number): {
     shown: any[];
     hidden: number;
 };
+/** 测试用：清空缓存与在途表 */
+export declare function __resetApiCache(): void;
+export declare function fetchJsonCached(url: string, ttlMs: number, force?: boolean): Promise<any>;
 export declare function SessionPrOverlay(props: any): any;
 export declare function SessionPrPanel(props: any): any;
 /** 右列 tab 的标题（chip 上也走这里） */
