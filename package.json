@@ -32,7 +32,8 @@
     "build": "node scripts/build-css.mjs && tsc && node scripts/build.mjs",
     "test": "node test/run-all.mjs",
     "prepare": "pnpm run build",
-    "build:css": "node scripts/build-css.mjs"
+    "build:css": "node scripts/build-css.mjs",
+    "bump": "node scripts/bump.mjs"
   },
   "dsh": {
     "bundle": {

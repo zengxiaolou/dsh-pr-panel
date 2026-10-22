@@ -50,6 +50,7 @@ const phases = [
   'phase43.test.mjs',
   'phase44.test.mjs',
   'phase45.test.mjs',
+  'phase46.test.mjs',
 ];
 
 function runPhase(file) {
