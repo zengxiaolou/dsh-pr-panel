@@ -248,6 +248,10 @@ ok(/\.ghsp-pill\{[^}]*background:var\(--dsw-specific-menu/.test(client), '浮窗
 ok(client.includes('function CiPipelineStrip'), '浮窗里有 CI/CD 紧凑条组件');
 ok(client.includes('.ghsp-ci-head'), '紧凑条样式已打包');
 ok(client.includes('function WorkspaceBlock'), '浮窗里有「项目 / worktree」区块');
+ok(client.includes('function overlayTabBar'), '浮窗有 tab 切换（功能 / 项目 / CI-CD）');
+ok(client.includes('.ghsp-otab.active'), 'tab 选中样式已打包');
+ok(client.includes('.ghsp-oscard'), '每块一张卡片：卡片样式已打包');
+ok((client.match(/overlayTab === "project"/g) || []).length > 0, 'tab 切换会按需渲染项目视图');
 ok(client.includes('.ghsp-ws-row.current'), '当前 worktree 有高亮样式');
 ok(client.includes('/api/github/workspace-info'), '区块走工作区信息接口');
 ok(client.includes('readJsonSafe'), '非 JSON 响应会被翻译成可行动的提示（不是解析报错）');
