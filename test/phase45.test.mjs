@@ -102,6 +102,39 @@ const hostGroups = groupPrsByFeature(realRows);
 eq(hostGroups.length, 5, 'Host 侧同样是 5 组');
 eq(hostGroups.map((g) => g.key).sort().join('|'), realGroups.map((g) => g.key).sort().join('|'), 'Host 与客户端组名完全一致');
 
+console.log('\n--- 4.4 兄弟分支：同一前缀 + 不同后缀 -------------');
+// 真实数据（2026-10-22 第二批 12 条）：同一条链的分支是「兄弟名」，
+// 互不包含，只共享前缀。这批是靠公共词串聚起来的。
+const siblings = [
+  { number: 2094, headRefName: 'chore/remove-orphan-vcc-contract-development', baseRefName: 'development', state: 'OPEN', stage: { id: 'dev', label: 'Dev', order: 10 } },
+  { number: 2095, headRefName: 'chore/remove-orphan-vcc-contract-test', baseRefName: 'test', state: 'OPEN', stage: { id: 'test', label: 'Test', order: 20 } },
+  { number: 2097, headRefName: 'chore/remove-orphan-vcc-contract-release-0.1', baseRefName: 'release_0.1.62', state: 'OPEN', stage: { id: 'release', label: 'Release', order: 30 } },
+  { number: 2096, headRefName: 'chore/remove-orphan-vcc-contract-main', baseRefName: 'main', state: 'OPEN', stage: { id: 'prod', label: 'Prod', order: 40 } },
+  { number: 2099, headRefName: 'sync/release-0.1.62-orphan-cleanup-to-main-20261022', baseRefName: 'main', state: 'OPEN', stage: { id: 'prod', label: 'Prod', order: 40 } },
+  { number: 4120, headRefName: 'ci/main-gate-on-release', baseRefName: 'release_v1.0.80', state: 'OPEN', stage: { id: 'release', label: 'Release', order: 30 } },
+  { number: 4116, headRefName: 'sync/release-v1.0.80-main-gate-20261022-v3', baseRefName: 'main', state: 'OPEN', stage: { id: 'prod', label: 'Prod', order: 40 } },
+  { number: 4115, headRefName: 'sync/release-v1.0.80-main-gate-20261022-v2', baseRefName: 'main', state: 'OPEN', stage: { id: 'prod', label: 'Prod', order: 40 } },
+  { number: 4114, headRefName: 'sync/release-v1.0.80-main-gate-20261022', baseRefName: 'main', state: 'OPEN', stage: { id: 'prod', label: 'Prod', order: 40 } },
+  { number: 1990, headRefName: 'chore/ci-drop-dead-jobs-release', baseRefName: 'release_v1.0.68', state: 'OPEN', stage: { id: 'release', label: 'Release', order: 30 } },
+  { number: 1991, headRefName: 'chore/ci-drop-dead-jobs-main', baseRefName: 'main', state: 'OPEN', stage: { id: 'prod', label: 'Prod', order: 40 } },
+  { number: 1993, headRefName: 'sync/release-v1.0.68-ci-cleanup-to-main-2026', baseRefName: 'main', state: 'OPEN', stage: { id: 'prod', label: 'Prod', order: 40 } },
+];
+const sib = lanes.groupItemsByFeature(siblings);
+eq(sib.length, 3, '第二批 12 条 → 3 条功能泳道');
+const sibBy = (k) => sib.find((g) => g.key === k);
+eq(sibBy('remove-orphan-vcc-contract') ? sibBy('remove-orphan-vcc-contract').items.length : 0, 5, 'remove-orphan-vcc-contract 收 5 条（含 sync 那条）');
+eq(sibBy('main-gate') ? sibBy('main-gate').items.length : 0, 4, 'main-gate 收 4 条');
+eq(sibBy('ci-drop-dead-jobs') ? sibBy('ci-drop-dead-jobs').items.length : 0, 3, 'ci-drop-dead-jobs 收 3 条（含 v1.0.68 的 sync）');
+// 反向保证：不能靠 sync 套话误并两条无关的链
+const falsePair = lanes.groupItemsByFeature([
+  { number: 1, headRefName: 'sync/release-0.1.62-orphan-cleanup-to-main-20261022', baseRefName: 'main', state: 'OPEN' },
+  { number: 2, headRefName: 'sync/release-v1.0.68-ci-cleanup-to-main-2026', baseRefName: 'main', state: 'OPEN' },
+]);
+eq(falsePair.length, 2, 'cleanup-to-main 这种套话不能把两条无关链并在一起');
+const hostSib = groupPrsByFeature(siblings);
+eq(hostSib.length, 3, 'Host 侧同样 3 组');
+eq(hostSib.map((g) => g.key).sort().join('|'), sib.map((g) => g.key).sort().join('|'), 'Host 与客户端组名一致');
+
 console.log('\n--- 4.6 标签优先：feature:<名> 高于分支名推断 ---');
 const withLabels = [
   // 两条完全无关的分支，但同一个功能标签

@@ -16,7 +16,7 @@ declare function formatRelativeTime(iso: any): string;
  *    diff 复用它已经拉好的 unified patch。
  */
 
-import { Lanes, modeBar, loadGroupMode, saveGroupMode } from './pr-lanes.js';
+import { Lanes } from './pr-lanes.js';
 import { runConclusionBadge, formatDurationMs } from './utils.js';
 
 export const SESSION_PR_CSS = `
@@ -854,12 +854,6 @@ function SessionPrOverlayInner(props: any) {
   var state = pair[0];
   var refresh = pair[1];
   var [open, setOpen] = React.useState(false);
-  // 阶段 / 功能 两种分组视角；持久化到 localStorage，浮窗与面板共用同一个键
-  var [groupMode, setGroupMode] = React.useState(loadGroupMode);
-  var changeGroupMode = function (next: string) {
-    saveGroupMode(next);
-    setGroupMode(next === "feature" ? "feature" : "stage");
-  };
   // 右键菜单：{x, y, item}；同时用一个短 toast 反馈「已复制」
   var [menu, setMenu] = React.useState(null as any);
   var [hint, setHint] = React.useState(null as any);
@@ -1164,9 +1158,7 @@ function SessionPrOverlayInner(props: any) {
       // 首帧 lite 只有编号（还没有 stage），先平铺，数据齐了再分段，避免闪一个假的 Other 段。
       pendingOnly
         ? React.createElement("ul", { className: "ghsp-list" }, items.map(overlayRow))
-        : React.createElement("div", null,
-            modeBar(groupMode, changeGroupMode),
-            React.createElement(Lanes, { items: items, mode: groupMode, rowFn: overlayRow }))
+        : React.createElement(Lanes, { items: items, mode: "feature", rowFn: overlayRow })
     )
   );
 }
@@ -1608,12 +1600,6 @@ function SessionPrPanelBody(props: any) {
   var list = pair[0];
 
   var initialNumber = Number(params.number) || null;
-  // 与浮窗共用同一个持久化键：在浮窗里切到「功能」，面板里也是「功能」
-  var [groupMode, setGroupMode] = React.useState(loadGroupMode);
-  var changeGroupMode = function (next: string) {
-    saveGroupMode(next);
-    setGroupMode(next === "feature" ? "feature" : "stage");
-  };
   var [selected, setSelected] = React.useState(initialNumber);
   var [selectedRepo, setSelectedRepo] = React.useState((params.repo as string) || null);
   var [lineSel, setLineSel] = React.useState(null as any);
@@ -2055,9 +2041,7 @@ function SessionPrPanelBody(props: any) {
             if (pendingOnly) {
               return React.createElement("ul", { className: "ghsp-list", style: { padding: "6px" } }, items.map(panelRow));
             }
-            return React.createElement("div", null,
-              modeBar(groupMode, changeGroupMode),
-              React.createElement(Lanes, { items: items, mode: groupMode, rowFn: panelRow }));
+            return React.createElement(Lanes, { items: items, mode: "feature", rowFn: panelRow });
           })()
     );
   }

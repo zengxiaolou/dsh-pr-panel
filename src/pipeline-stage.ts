@@ -330,9 +330,37 @@ const FEATURE_NOISE_TOKENS = new Set([
 /** 分支名归一：去类型前缀、去尾部日期、下划线转连字符 */
 export function normalizeBranchSlug(head: any): string {
   let slug = String(head == null ? '' : head).toLowerCase().replace(/_/g, '-');
-  slug = slug.replace(/^(fix|feat|feature|chore|hotfix|bugfix|sync|rel|release)\//, '');
-  slug = slug.replace(/-?\d{8}$/, '');
+  slug = slug.replace(/^(fix|feat|feature|chore|hotfix|bugfix|sync|rel|release|ci)\//, '');
+  slug = slug.replace(/-?\d{8}(-v\d+)?$/, '');
+  // 剥掉「同步到某分支」的套话尾巴，避免用 cleanup-to-main 这类词串误并
+  slug = slug.replace(/-?(to|into)-(main|master|dev|development|test|release[^-]*)(-\d{8})?$/, '');
   return slug.replace(/-{2,}/g, '-').replace(/^-|-$/g, '');
+}
+
+function normalizeBaseName(base: any): string {
+  return String(base == null ? '' : base).toLowerCase().replace(/_/g, '-');
+}
+
+function hasVersionToken(text: any): boolean {
+  return /\d+\.\d+\.\d+/.test(String(text == null ? '' : text));
+}
+
+function commonTokenRun(a: string, b: string): string[] {
+  const A = String(a || '').split(/[-/]/).filter(Boolean);
+  const B = String(b || '').split(/[-/]/).filter(Boolean);
+  let best: string[] = [];
+  let prev = new Array(B.length + 1).fill(0) as number[];
+  for (let i = 1; i <= A.length; i += 1) {
+    const cur = new Array(B.length + 1).fill(0) as number[];
+    for (let j = 1; j <= B.length; j += 1) {
+      if (A[i - 1] === B[j - 1]) {
+        cur[j] = prev[j - 1] + 1;
+        if (cur[j] > best.length) best = A.slice(i - cur[j], i);
+      }
+    }
+    prev = cur;
+  }
+  return best;
 }
 
 function versionTokensOf(slug: string): string[] {
@@ -348,15 +376,22 @@ function topicTokensOf(slug: string): string[] {
  * a) 派生分支名包含源分支名；b) 同版本 + 共享主题词。
  */
 function sameChain(a: any, b: any): boolean {
-  // ① 标签优先：任一方带 feature 标签时只看标签，不再做分支名推断
   if (a.featureLabel || b.featureLabel) {
     return Boolean(a.featureLabel) && a.featureLabel === b.featureLabel;
   }
-  // ② 完全同名（含短名）
   if (a.slug && a.slug === b.slug) return true;
+  // 版本互斥：两边都带版本号却无交集 → 不同批次
+  if (a.versions.length > 0 && b.versions.length > 0
+    && !a.versions.some((v: string) => b.versions.includes(v))) return false;
   const shortSlug = a.slug.length <= b.slug.length ? a.slug : b.slug;
   const longSlug = a.slug.length <= b.slug.length ? b.slug : a.slug;
   if (shortSlug.length >= 6 && longSlug.includes(shortSlug)) return true;
+  const run = commonTokenRun(a.slug, b.slug);
+  if (run.length >= 2 && run.join('-').length >= 8) return true;
+  for (const [src, dst] of [[a, b], [b, a]] as const) {
+    const base = normalizeBaseName(src.baseRefName);
+    if (hasVersionToken(base) && base.length >= 8 && dst.slug.includes(base)) return true;
+  }
   const sharedVersion = a.versions.some((v: string) => b.versions.includes(v));
   if (!sharedVersion) return false;
   return a.topics.some((t: string) => b.topics.includes(t));
@@ -380,7 +415,7 @@ export function featureLabelOfItem(item: any): string {
 /** 单条 PR 的归一化信息（导出供测试） */
 export function featureRowOf(item: any) {
   const slug = normalizeBranchSlug(item?.headRefName);
-  return { slug, versions: versionTokensOf(slug), topics: topicTokensOf(slug), featureLabel: featureLabelOfItem(item) };
+  return { slug, head: String(item?.headRefName || '').trim(), baseRefName: String(item?.baseRefName || ''), versions: versionTokensOf(slug), topics: topicTokensOf(slug), featureLabel: featureLabelOfItem(item) };
 }
 
 export function groupPrsByFeature<T extends Record<string, any>>(items: T[]): Array<FeatureGroup<T>> {
@@ -416,9 +451,24 @@ export function groupPrsByFeature<T extends Record<string, any>>(items: T[]): Ar
     // 组名取「最短且够长」的 slug：太短的（v1.0.79、ci）不适合当标签
     const slugs = list.map((r) => r.slug).filter(Boolean).sort((a, b) => a.length - b.length);
     const byLabel = list[0]?.featureLabel || '';
+    let commonRun = '';
+    if (!byLabel && list.length > 1) {
+      const runs = new Map<string, number>();
+      for (let x = 0; x < list.length; x += 1) {
+        for (let y = x + 1; y < list.length; y += 1) {
+          const cr = commonTokenRun(list[x].slug, list[y].slug);
+          if (cr.length >= 2 && cr.join('-').length >= 8) {
+            const k = cr.join('-');
+            runs.set(k, (runs.get(k) || 0) + 1);
+          }
+        }
+      }
+      const best = [...runs.entries()].sort((p, q) => q[1] - p[1] || p[0].length - q[0].length)[0];
+      commonRun = best ? best[0] : '';
+    }
     const key = byLabel
       ? `label:${byLabel}`
-      : (slugs.find((k) => k.length >= 8) || slugs[0] || `${list[0].item?.repo || ''}#${list[0].item?.number || ''}`);
+      : (commonRun || slugs.find((k) => k.length >= 8) || slugs[0] || `${list[0].item?.repo || ''}#${list[0].item?.number || ''}`);
     const source: 'label' | 'branch' = byLabel ? 'label' : 'branch';
     let furthest: PipelineStage | null = null;
     let furthestRank = -1;
@@ -430,7 +480,23 @@ export function groupPrsByFeature<T extends Record<string, any>>(items: T[]): Ar
       if (!(row.item && row.item.mergedAt) && String((row.item && row.item.state) || '').toUpperCase() !== 'CLOSED') done = false;
     }
     const labelRow = byLabel ? null : list.find((r) => r.slug === key);
-    const label = byLabel || (labelRow ? String(labelRow.item?.headRefName || '').trim() : '');
+    const isDerived = (h: string) => /^sync\//i.test(h) || /\d{8}(-v\d+)?$/.test(h);
+    let label = byLabel || commonRun;
+    if (!byLabel && commonRun) {
+      const exact = list.filter((r) => r.slug === commonRun && r.head);
+      const exactOrigin = exact.filter((r) => !isDerived(r.head));
+      if (exactOrigin.length) label = exactOrigin[0].head;
+      else if (exact.length) label = exact[0].head;
+    }
+    if (!label) {
+      const origins = list.map((r) => r.head).filter((h) => h && !isDerived(h));
+      if (origins.length) {
+        label = origins.sort((a, b) => a.length - b.length)[0];
+      } else {
+        const exact = list.find((r) => r.slug === key);
+        label = exact ? exact.head : '';
+      }
+    }
     out.push({ key, label: label || key, source, items: list.map((r) => r.item), furthest: furthest || stageById('other'), done });
   }
 

@@ -117,6 +117,8 @@ export declare function featureLabelOfItem(item: any): string;
 /** 单条 PR 的归一化信息（导出供测试） */
 export declare function featureRowOf(item: any): {
     slug: string;
+    head: string;
+    baseRefName: string;
     versions: string[];
     topics: string[];
     featureLabel: string;
