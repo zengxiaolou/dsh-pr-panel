@@ -113,6 +113,7 @@ export const SESSION_PR_CSS = `
 .ghsp-prruns-num{flex:0 0 auto;font-size:10px;font-weight:600;color:var(--dsw-alias-label-secondary)}
 .ghsp-prruns-branch{flex:1;min-width:0;font-size:10px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ghsp-run-sub.empty{padding:2px 4px}
+.ghsp-note-warn{margin:0 0 2px;padding:5px 7px;border-radius:6px;font-size:10px;color:var(--dsw-alias-state-warn-primary,#9a6700);background:color-mix(in srgb, var(--dsw-alias-state-warn-primary,#9a6700) 12%, transparent);border:1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary,#9a6700) 35%, transparent)}
 .ghsp-run-phase{display:inline-block;margin-right:4px;padding:0 3px;border-radius:3px;font-size:8px;border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary)}
 .ghsp-run-phase.after{color:var(--dsw-alias-state-success-primary,#1a7f37);border-color:currentColor}
 
@@ -1156,7 +1157,8 @@ function WorkspaceBlock(props: any) {
 
   if (!cwd) return React.createElement("div", { className: "ghsp-empty2" }, "当前标签页没有绑定会话");
   if (state.loading && !state.data) return React.createElement("div", { className: "ghsp-empty2" }, "读取中…");
-  if (state.error) return React.createElement("div", { className: "ghsp-empty2" }, state.error);
+  var notice = state.error && state.groups.length ? state.error : null;
+  if (state.error && !state.groups.length) return React.createElement("div", { className: "ghsp-empty2" }, state.error);
 
   var projects = (state.data && state.data.projects) || [];
   if (!projects.length) return React.createElement("div", { className: "ghsp-empty2" }, "本会话还没有关联项目");
@@ -1237,8 +1239,35 @@ function ActionsBlock(props: any) {
     fetchJsonCached(qs, 15_000)
       .then(function (json: any) {
         if (!alive) return;
-        if (json && json.ok && json.data) setState({ loading: false, groups: json.data.groups || [], error: null });
-        else setState({ loading: false, groups: [], error: (json && (json.error || json.message)) || '读取失败' });
+        if (json && json.ok && json.data) { setState({ loading: false, groups: json.data.groups || [], error: null }); return; }
+        // 宿主版本落后（路由不存在）：退到仓库级运行，并把原因写在界面里，而不是抛一串 404
+        var msg = String((json && (json.error || json.message)) || '读取失败');
+        if (/HTTP 40[14]|not valid JSON|接口不可用/.test(msg)) {
+          var repos: string[] = [];
+          pairs.forEach(function (p: any) { if (repos.indexOf(p.repo) < 0) repos.push(p.repo); });
+          Promise.all(repos.map(function (repo: string) {
+            return fetchJsonCached("/api/github/ci-pipeline?limit=4&repo=" + encodeURIComponent(repo), 15_000)
+              .then(function (j: any) { return { repo: repo, json: j }; })
+              .catch(function () { return { repo: repo, json: null }; });
+          })).then(function (rs: any[]) {
+            if (!alive) return;
+            var groups: any[] = [];
+            rs.forEach(function (r: any) {
+              var d = r.json && r.json.ok ? r.json.data : null;
+              if (!d || !d.workflows) return;
+              d.workflows.forEach(function (wf: any) {
+                var l = wf.latest || {};
+                groups.push({
+                  repo: r.repo, head: '(仓库级)', base: l.headBranch || '', fallback: true,
+                  runs: [{ id: wf.id, name: wf.name, status: l.status || '', conclusion: l.conclusion || '', url: l.url || '', event: l.event || '', createdAt: l.createdAt || '', updatedAt: l.updatedAt || '', active: l.active || null, phase: 'repo' }],
+                });
+              });
+            });
+            setState({ loading: false, groups: groups, error: '宿主还没重启：先显示仓库级最近运行。请退出并重开 DSH（只刷新页面不够）' });
+          });
+          return;
+        }
+        setState({ loading: false, groups: [], error: msg });
       })
       .catch(function (err: any) {
         if (!alive) return;
@@ -1249,7 +1278,8 @@ function ActionsBlock(props: any) {
 
   if (!items.length) return React.createElement("div", { className: "ghsp-empty2" }, "本会话还没有提交 PR");
   if (state.loading) return React.createElement("div", { className: "ghsp-empty2" }, "读取中…");
-  if (state.error) return React.createElement("div", { className: "ghsp-empty2" }, state.error);
+  var notice = state.error && state.groups.length ? state.error : null;
+  if (state.error && !state.groups.length) return React.createElement("div", { className: "ghsp-empty2" }, state.error);
 
   var openUrl = function (url: string) {
     if (!url) return;
@@ -1267,6 +1297,7 @@ function ActionsBlock(props: any) {
   });
 
   return React.createElement("div", { className: "ghsp-ocards" },
+    notice ? React.createElement("div", { className: "ghsp-note-warn" }, notice) : null,
     byRepo.map(function (entry: any) {
       return React.createElement("div", { key: entry.repo, className: "ghsp-pcard" },
         React.createElement("div", { className: "ghsp-pcard-top" },
