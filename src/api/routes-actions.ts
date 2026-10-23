@@ -1141,6 +1141,8 @@ export function registerActionRoutes(
                 sessionId,
                 items: snap.items,
                 total: snap.items.length,
+                // 快照里的 items 就是保存时的全量（上限 200），长度即全量计数
+                refsTotal: snap.items.length,
                 descendants: descendants.length,
                 fromSnapshot: true,
                 snapshotAt: snap.at,
@@ -2399,7 +2401,9 @@ const SNAPSHOT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
  * 快照结构版本：item 字段一变，旧快照就不能再拿去渲染。
  * v2 起 item 带 stage（泳道分组依赖它）；v1 的旧快照会被直接忽略并重拉。
  */
-const SESSION_SNAPSHOT_SCHEMA = 2;
+// v3：v2 及更早的快照是按「最近 12 条」截断写入的，直接续用会把截断结果固化 24 小时。
+// 只要列表口径（上限/字段）变了就必须升版，让旧快照失效。
+const SESSION_SNAPSHOT_SCHEMA = 3;
 type SessionSnapshotEntry = { at: number; items: any[]; sig?: string; v?: number };
 let sessionSnapshot: Record<string, SessionSnapshotEntry> | null = null;
 const snapshotServed = new Set<string>();
