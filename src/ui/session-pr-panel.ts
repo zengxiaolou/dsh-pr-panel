@@ -16,7 +16,7 @@ declare function formatRelativeTime(iso: any): string;
  *    diff 复用它已经拉好的 unified patch。
  */
 
-import { Lanes } from './pr-lanes.js';
+import { Lanes, prAttention as prAttentionOf } from './pr-lanes.js';
 import { runConclusionBadge, formatDurationMs } from './utils.js';
 
 export const SESSION_PR_CSS = `
@@ -97,6 +97,7 @@ export const SESSION_PR_CSS = `
 .ghsp-pcard-dirty{flex:0 0 auto;font-size:10px;color:var(--dsw-alias-state-warn-primary,#9a6700)}
 .ghsp-pcard-branch{margin-top:2px;padding-left:13px;font-size:10px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ghsp-pcard-more{color:var(--dsw-alias-label-tertiary)}
+.ghsp-pcard-branch.prune{color:var(--dsw-alias-state-warn-primary,#d29922);cursor:help}
 .ghsp-wf-list{margin-top:4px;display:flex;flex-direction:column;gap:1px}
 .ghsp-wf-row{display:flex;align-items:center;gap:6px;width:100%;padding:3px 4px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;text-align:left;font:inherit}
 .ghsp-wf-row:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
@@ -113,6 +114,12 @@ export const SESSION_PR_CSS = `
 .ghsp-prruns-num{flex:0 0 auto;font-size:10px;font-weight:600;color:var(--dsw-alias-label-secondary)}
 .ghsp-prruns-branch{flex:1;min-width:0;font-size:10px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ghsp-run-sub.empty{padding:2px 4px}
+.ghsp-checks{display:inline-flex;align-items:center;gap:3px;flex:0 0 auto}
+.ghsp-checks-num{font-size:9px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
+.ghsp-attn{flex:0 0 auto;font-size:9px;line-height:14px;padding:0 4px;border-radius:4px;border:1px solid currentColor}
+.ghsp-attn.todo{color:var(--dsw-alias-state-warn-primary,#d29922)}
+.ghsp-attn.blocker{color:var(--dsw-alias-state-danger-primary,#f85149)}
+.ghsp-row.sel{background:var(--dsw-alias-bg-layer-2);box-shadow:inset 2px 0 0 var(--dsw-alias-brand-primary,#2f81f7)}
 .ghsp-note-warn{margin:0 0 2px;padding:5px 7px;border-radius:6px;font-size:10px;color:var(--dsw-alias-state-warn-primary,#9a6700);background:color-mix(in srgb, var(--dsw-alias-state-warn-primary,#9a6700) 12%, transparent);border:1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary,#9a6700) 35%, transparent)}
 .ghsp-run-phase{display:inline-block;margin-right:4px;padding:0 3px;border-radius:3px;font-size:8px;border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary)}
 .ghsp-run-phase.after{color:var(--dsw-alias-state-success-primary,#1a7f37);border-color:currentColor}
@@ -1216,6 +1223,12 @@ function WorkspaceBlock(props: any) {
               React.createElement("span", { className: "ghsp-pcard-name" }, String(primary.name || primary.path)),
               proj.dirtyCount > 0 ? React.createElement("span", { className: "ghsp-pcard-dirty" }, proj.dirtyCount + " 未提交") : null)
           : null,
+        proj.prunableCount > 0
+          ? React.createElement("div", {
+              className: "ghsp-pcard-branch prune",
+              title: "可清理 " + proj.prunableCount + " 个已失效的 worktree。\n预览：git worktree prune --dry-run -v\n实际清理：git worktree prune（我不代执行，属于不可逆操作）",
+            }, "可清理 " + proj.prunableCount + " 个 · prune --dry-run 预览")
+          : null,
         primary
           ? React.createElement("div", { className: "ghsp-pcard-branch", title: primary.branch || "" },
               primary.detached ? "(detached)" : (primary.branch || "（无分支）"),
@@ -1439,6 +1452,8 @@ function SessionPrOverlayInner(props: any) {
   var [overlayTab, setOverlayTab] = React.useState("pr");
   // 「功能」列表先给 20 条，滑到底部再续 20 条（不做假分页：数据早就在内存里）
   var [visiblePrs, setVisiblePrs] = React.useState(20);
+  // 键盘导航：j/k 选行、Enter 打开、1/2/3 切 tab、Esc 收起（借鉴 gh-dash / octobox）
+  var [selIdx, setSelIdx] = React.useState(-1);
   // 右键菜单：{x, y, item}；同时用一个短 toast 反馈「已复制」
   var [menu, setMenu] = React.useState(null as any);
   var [hint, setHint] = React.useState(null as any);
@@ -1601,9 +1616,51 @@ function SessionPrOverlayInner(props: any) {
     : null;
 
   // 首帧 lite 只回了编号：这时按阶段切段会先冒出假的 Other 段，先平铺
+  var recentItems = pickRecentPrs(items, visiblePrs);
+  var selKey = selIdx >= 0 && selIdx < recentItems.length ? prStateKey(recentItems[selIdx]) : "";
+
+  React.useEffect(function () {
+    if (!open || pendingOnly) return;
+    var onKey = function (ev: any) {
+      if (!ev || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      var tag = String((ev.target && ev.target.tagName) || "").toLowerCase();
+      if (tag === "input" || tag === "textarea") return;
+      var k = String(ev.key || "");
+      if (k === "j" || k === "ArrowDown") {
+        ev.preventDefault();
+        setSelIdx(function (i: number) { return Math.min(recentItems.length - 1, i + 1); });
+      } else if (k === "k" || k === "ArrowUp") {
+        ev.preventDefault();
+        setSelIdx(function (i: number) { return Math.max(0, i - 1); });
+      } else if (k === "Enter" && selIdx >= 0 && recentItems[selIdx]) {
+        ev.preventDefault();
+        if (props.onOpenPr) props.onOpenPr({ repo: recentItems[selIdx].repo, number: recentItems[selIdx].number });
+      } else if (k === "1" || k === "2" || k === "3") {
+        ev.preventDefault();
+        setOverlayTab(k === "1" ? "pr" : k === "2" ? "project" : "ci");
+        setSelIdx(-1);
+      } else if (k === "Escape") {
+        ev.preventDefault();
+        setOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return function () { window.removeEventListener("keydown", onKey, true); };
+  }, [open, pendingOnly, selIdx, recentItems.length]);
+
+  // 选中项滚进可视区
+  React.useEffect(function () {
+    if (selIdx < 0) return;
+    try {
+      var el = document.querySelector(".ghsp-row.sel");
+      if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+    } catch (e) { /* 忽略 */ }
+  }, [selIdx]);
+
   var pendingOnly = items.every(function (it: any) { return it.pending; });
 
   var overlayRow = function (item: any) {
+    var isSelected = selKey !== "" && prStateKey(item) === selKey;
     var rowKey = prStateKey(item);
     var checks = item.checks || { state: "none" };
     return React.createElement(
@@ -1630,7 +1687,13 @@ function SessionPrOverlayInner(props: any) {
           { className: "ghsp-row-top" },
           React.createElement("span", { className: "ghsp-row-num" }, "#" + item.number),
           React.createElement("span", { className: "ghsp-row-title" }, item.pending ? "读取中…" : (item.title || "")),
-          item.pending ? null : React.createElement("span", { className: "ghsp-badge " + (item.missing ? "unknown" : rowKey) }, item.missing ? "?" : prStateLabel(rowKey))
+          item.pending ? null : React.createElement("span", { className: "ghsp-badge " + (item.missing ? "unknown" : rowKey) }, item.missing ? "?" : prStateLabel(rowKey)),
+          !item.pending && prAttentionOf(item) >= 2
+            ? React.createElement("span", {
+                className: "ghsp-attn " + (prAttentionOf(item) >= 3 ? "blocker" : "todo"),
+                title: prAttentionOf(item) >= 3 ? "需要处理：CI 失败或存在冲突" : "需要处理：待修改 / 待你评审",
+              }, prAttentionOf(item) >= 3 ? "!" : "待")
+            : null
         ),
         React.createElement(
           "div",
@@ -1640,7 +1703,11 @@ function SessionPrOverlayInner(props: any) {
           renderOriginTag(item),
           item.pending
             ? React.createElement("span", { className: "ghsp-inline-loading" }, React.createElement("span", { className: "ghsp-spinner" }))
-            : React.createElement("span", { className: "ghsp-dot " + (item.missing ? "none" : checks.state), title: "检查状态" })
+            : React.createElement("span", { className: "ghsp-checks", title: "检查 " + (Number(checks.total || 0) - Number(checks.failing || 0)) + "/" + Number(checks.total || 0) + " 通过" },
+                React.createElement("span", { className: "ghsp-dot " + (item.missing ? "none" : checks.state) }),
+                Number(checks.total) > 0
+                  ? React.createElement("span", { className: "ghsp-checks-num" }, (Number(checks.total) - Number(checks.failing)) + "/" + Number(checks.total))
+                  : null)
         )
       )
     );
@@ -1781,7 +1848,7 @@ function SessionPrOverlayInner(props: any) {
         : (pendingOnly
           ? React.createElement("ul", { className: "ghsp-list" }, items.map(overlayRow))
           : React.createElement(Lanes, {
-              items: pickRecentPrs(items, visiblePrs),
+              items: recentItems,
               mode: "feature",
               rowFn: overlayRow,
               onLoadMore: function () {

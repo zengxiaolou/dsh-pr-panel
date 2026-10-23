@@ -350,6 +350,18 @@ ok(!shouldLoadMore(0, 400, 1300), '在顶部不触发');
 ok(!shouldLoadMore(0, 400, 400), '没有可滚动空间时不触发');
 ok(!shouldLoadMore(100, 400, 900), '离底部还远不触发');
 
+console.log('\n--- 4.17 关注度：该看哪一条 ---');
+const { prAttention } = await import('../lib/ui/pr-lanes.js');
+eq(prAttention({ state: 'OPEN', checks: { state: 'pass', total: 6, failing: 0 } }), 0, '全绿且无冲突 → 0');
+eq(prAttention({ state: 'OPEN', checks: { state: 'pending', total: 6, failing: 0 } }), 1, '检查进行中 → 1 留意');
+eq(prAttention({ state: 'OPEN', reviewDecision: 'CHANGES_REQUESTED' }), 2, '要求修改 → 2 待处理');
+eq(prAttention({ state: 'OPEN', reviewRequested: ['me'] }), 2, '待我评审 → 2 待处理');
+eq(prAttention({ state: 'OPEN', checks: { state: 'fail', total: 6, failing: 2 } }), 3, 'CI 失败 → 3 阻塞');
+eq(prAttention({ state: 'OPEN', mergeable: 'CONFLICTING' }), 3, '有冲突 → 3 阻塞');
+eq(prAttention({ state: 'OPEN', mergeStateStatus: 'DIRTY' }), 3, 'DIRTY → 3 阻塞');
+eq(prAttention({ state: 'MERGED' }), 0, '已合并不再需要动作');
+eq(prAttention(null), 0, '空值不炸');
+
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
 console.log('\n--- 4.12 CI/CD tab：本会话 PR 的 Actions（PR 校验 + 合并后） ---');
@@ -363,6 +375,11 @@ ok(/actions\/runs\?branch=/.test(routesCi), '按分支过滤运行（head 与 ba
 ok(client.includes('宿主还没重启'), '宿主版本落后时给出可行动的提示，而不是抛 404');
 ok(client.includes('React.useState("rebase")'), '合并方式默认 rebase');
 ok(client.includes('近 30 分钟没有运行'), '无近期运行的分支折成一行说明');
+ok(client.includes('ghsp-checks-num'), '行内显示检查通过数 n/m');
+ok(client.includes('ghsp-attn'), '需要处理的 PR 有标记');
+ok(client.includes('window.addEventListener("keydown"'), '浮窗支持键盘导航');
+ok(client.includes('ghsp-row.sel'), '键盘选中行有高亮');
+ok(client.includes('prune --dry-run'), 'worktree 清理只给预览命令，不代执行');
 ok(client.includes('pickRecentPrs(items, visiblePrs)'), '浮窗按可见条数渲染（默认 20）');
 ok(client.includes('setVisiblePrs'), '滑到底会递增可见条数');
 eq(client.includes('已显示 '), true, '提示显示「已显示 N / M 条」');

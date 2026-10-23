@@ -36,7 +36,9 @@ dsh plugin --profile <profile> add ./dsh-pr-panel-0.1.0.tgz
 | ![功能视图](docs/images/overlay-feature.png) | ![项目视图](docs/images/overlay-project.png) | ![CI/CD 视图](docs/images/overlay-ci.png) |
 
 - **功能**：按分支链把同一个功能的 PR 收进一条泳道。泳道头是完成度（`PENDING` / `DONE` / `CLOSED`），不是环境；环境在每行的 `→ 目标分支` 上。列表先给 20 条，滑到底续 20 条。
-- **项目**：本会话涉及的每个项目，显示**它当前正在用的那个 worktree**（按 PR 的 head 分支反查，git 里一个分支只属于一个 worktree），以及该仓库共有多少个 worktree。
+  - 行内右侧直接给检查通过数（`9/9`）；需要你处理的打标记：`!` 表示 CI 失败或有冲突，`待` 表示要求修改或等你评审。泳道内这些行自动排到前面。
+  - 键盘：`j`/`k`（或上下箭头）选行、`Enter` 打开、`1`/`2`/`3` 切视图、`Esc` 收起。
+- **项目**：本会话涉及的每个项目，显示**它当前正在用的那个 worktree**（按 PR 的 head 分支反查，git 里一个分支只属于一个 worktree），以及该仓库共有多少个 worktree。失效的 worktree 会提示可清理数量与预览命令，但不会代你执行删除。
 - **CI/CD**：本会话 PR 触发的 Actions。分两段：`PR 校验`（head 分支）与`合并后`（base 分支、合并后 30 分钟内）。运行中显示 `3/13` 与当前步骤，点整行打开该次运行。
 
 > 截图取自 [`docs/preview`](docs/preview) 的离线预览页：用插件自己的 CSS 与组件标记渲染，数据是示例值（不含真实仓库信息）。重新生成：

@@ -1178,6 +1178,11 @@ export function registerActionRoutes(
           deletions: Number(meta?.deletions) || 0,
           changedFiles: Number(meta?.changedFiles) || 0,
           reviewDecision: meta?.reviewDecision || '',
+          mergeable: meta?.mergeable || '',
+          mergeStateStatus: meta?.mergeStateStatus || '',
+          reviewRequested: Array.isArray(meta?.reviewRequests?.nodes)
+            ? meta.reviewRequests.nodes.map((n: any) => n?.requestedReviewer?.login).filter(Boolean)
+            : [],
           createdAt: meta?.createdAt || '',
           updatedAt: meta?.updatedAt || '',
           mergedAt: meta?.mergedAt || '',
@@ -1218,7 +1223,7 @@ export function registerActionRoutes(
           const parts = repo.split('/');
           if (parts.length !== 2) return null;
           const aliases = list.map((ref, idx) =>
-            `  p${idx}: pullRequest(number: ${Number(ref.number)}) { number title state isDraft url author { login avatarUrl } baseRefName headRefName additions deletions changedFiles reviewDecision labels(first: 20) { nodes { name } } statusCheckRollup { state } createdAt updatedAt mergedAt }`,
+            `  p${idx}: pullRequest(number: ${Number(ref.number)}) { number title state isDraft url author { login avatarUrl } baseRefName headRefName additions deletions changedFiles reviewDecision mergeable mergeStateStatus reviewRequests(first: 5) { nodes { requestedReviewer { __typename ... on User { login } } } } labels(first: 20) { nodes { name } } statusCheckRollup { state } createdAt updatedAt mergedAt }`,
           ).join('\n');
           const query = `query {\n  repository(owner: ${JSON.stringify(parts[0])}, name: ${JSON.stringify(parts[1])}) {\n${aliases}\n  }\n}`;
           // 快路径：进程内复用的 HTTP 通道（同一端点反复取，省掉每次 gh 的握手）
@@ -1808,6 +1813,7 @@ function findRepoPathUnder(workspacePath: string, wanted: string, identityOf: (p
             branch: primary ? primary.branch : (status?.branch || ''),
             dirtyCount: status?.dirtyCount ?? null,
             totalWorktrees: worktrees.length,
+            prunableCount: worktrees.filter((w: any) => w.prunable).length,
             primary: toView(primary),
             primaryMatch: picked.match,
             usedCount: picked.usedCount,

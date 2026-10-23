@@ -28,6 +28,13 @@ export declare function groupItemsByFeature(items: any[]): {
 }[];
 /** 泳道标签：slug 过长时截断（组名本身已经是「最短且够长」的那条） */
 export declare function featureLabelOf(key: string): string;
+/**
+ * PR 的「要不要我动」等级（0 忽略，1 留意，2 待我处理，3 阻塞）。
+ *
+ * 借鉴 gh-dash 的分区思路：列表的价值不在"全量"，而在"该看哪条"。
+ * 只用已经拿到的字段，不额外发请求；Host 与客户端共用这一份口径。
+ */
+export declare function prAttention(item: any): number;
 export declare function buildLanes(items: any[], mode: string): {
     key: string;
     id: any;

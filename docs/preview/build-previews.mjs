@@ -4,7 +4,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const root = path.resolve(import.meta.dirname, '../..');
-const css = fs.readFileSync('/tmp/plugin.css', 'utf8');
+// CSS 直接从构建产物里取，避免样式漂移（之前用外置文件，新加的类没跟上）
+const bundle = fs.readFileSync(path.join(root, 'lib/client.js'), 'utf8');
+const cssStart = bundle.indexOf('.ghsp-card{');
+const q1 = bundle.lastIndexOf('"', cssStart);
+const q2 = bundle.indexOf('"', cssStart);
+const css = bundle.slice(q1 + 1, q2).replace(/\\n/g, '\n');
 
 const SHIM = `
 button{font:inherit;color:inherit;background:transparent;border:0;padding:0;text-align:inherit;cursor:pointer}
@@ -32,16 +37,18 @@ function avatar(letter, color) {
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 
-function row(n, title, badge, base, repo, letter, color, dot) {
+function row(n, title, badge, base, repo, letter, color, dot, checks, attn) {
   const tone = base.startsWith('release') ? 'release' : base === 'test' ? 'test' : 'dev';
   return '<li><button class="ghsp-row"><div class="ghsp-row-top">'
     + '<img class="ghsp-av" width="13" height="13" alt="" src="' + avatar(letter, color) + '">'
     + '<span class="ghsp-row-num">#' + n + '</span>'
     + '<span class="ghsp-row-title">' + title + '</span>'
-    + '<span class="ghsp-badge ' + badge + '">' + badge + '</span></div>'
+    + '<span class="ghsp-badge ' + badge + '">' + badge + '</span>'
+    + (attn ? '<span class="ghsp-attn ' + attn + '">' + (attn === 'blocker' ? '!' : '待') + '</span>' : '') + '</div>'
     + '<div class="ghsp-row-meta"><span class="ghsp-target ' + tone + '">→ ' + base + '</span>'
     + '<span class="ghsp-row-repo">' + repo + '</span>'
-    + '<span class="ghsp-dot ' + dot + '"></span></div></button></li>';
+    + '<span class="ghsp-checks"><span class="ghsp-dot ' + dot + '"></span>'
+    + '<span class="ghsp-checks-num">' + checks + '</span></span></div></button></li>';
 }
 
 function lane(chip, id, name, count, rows) {
@@ -74,12 +81,12 @@ function page(name, body) {
 }
 
 const lanes = lane('PENDING', 'pending', 'refund-asset', 2,
-    row(4291, 'fix(refund): 退款资产按币种分桶统计', 'open', 'development', 'acme/wallet-api', 'W', '#1f6feb', 'pending')
-  + row(4288, 'fix(refund): 月度退款口径与账单对齐', 'open', 'test', 'acme/wallet-api', 'H', '#8250df', 'pending'))
+    row(4291, 'fix(refund): 退款资产按币种分桶统计', 'open', 'development', 'acme/wallet-api', 'W', '#1f6feb', 'fail', '4/6', 'blocker')
+  + row(4288, 'fix(refund): 月度退款口径与账单对齐', 'open', 'test', 'acme/wallet-api', 'H', '#8250df', 'pending', '6/6', 'todo'))
   + lane('DONE', 'done', 'bill-remap', 4,
-    row(4271, 'fix(bill): 回迁 test 上漏进 development 的读时映射', 'merged', 'development', 'acme/wallet-api', 'Z', '#238636', 'pass')
-  + row(4270, 'fix(bill): 账单读时映射修复（open-api 兼容）', 'merged', 'test', 'acme/wallet-api', 'Z', '#238636', 'pass')
-  + row(4268, 'chore(dev): 部署账单读时映射修复', 'merged', 'release/v1.4', 'acme/wallet-api', 'L', '#9e6a03', 'pass'));
+    row(4271, 'fix(bill): 回迁 test 上漏进 development 的读时映射', 'merged', 'development', 'acme/wallet-api', 'Z', '#238636', 'pass', '9/9', '')
+  + row(4270, 'fix(bill): 账单读时映射修复（open-api 兼容）', 'merged', 'test', 'acme/wallet-api', 'Z', '#238636', 'pass', '9/9', '')
+  + row(4268, 'chore(dev): 部署账单读时映射修复', 'merged', 'release/v1.4', 'acme/wallet-api', 'L', '#9e6a03', 'pass', '9/9', ''));
 
 page('overlay-feature', '<div class="ghsp-overlay"><section class="ghsp-card">' + HEAD + tabs('pr')
   + '<div class="ghsp-empty2">已显示 8 / 12 条，继续下滑加载更多</div>'

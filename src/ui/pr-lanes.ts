@@ -325,6 +325,28 @@ function featureStatusOf(items: any[]): any {
   return { status: status, label: label, title: title, merged: merged, total: total };
 }
 
+/**
+ * PR 的「要不要我动」等级（0 忽略，1 留意，2 待我处理，3 阻塞）。
+ *
+ * 借鉴 gh-dash 的分区思路：列表的价值不在"全量"，而在"该看哪条"。
+ * 只用已经拿到的字段，不额外发请求；Host 与客户端共用这一份口径。
+ */
+export function prAttention(item: any): number {
+  if (!item) return 0;
+  var st = String(item.state || '').toUpperCase();
+  if (st === 'MERGED' || st === 'CLOSED') return 0;
+  var checks = item.checks || {};
+  if (Number(checks.failing) > 0) return 3;
+  if (String(item.mergeable || '').toUpperCase() === 'CONFLICTING') return 3;
+  if (String(item.mergeStateStatus || '').toUpperCase() === 'DIRTY') return 3;
+  if (String(item.reviewDecision || '').toUpperCase() === 'CHANGES_REQUESTED') return 2;
+  if (Array.isArray(item.reviewRequested) && item.reviewRequested.length > 0) return 2;
+  if (String(checks.state || '') === 'pending') return 1;
+  return 0;
+}
+
+const prAttentionOf = prAttention;
+
 export function buildLanes(items: any[], mode: string) {
   if (mode === "feature") {
     return groupItemsByFeature(items).map(function (g: any) {
@@ -335,6 +357,7 @@ export function buildLanes(items: any[], mode: string) {
         id: fs.status,
         chip: fs.label,
         status: fs.status,
+        attention: g.items.filter(function (it: any) { return prAttentionOf(it) >= 2; }).length,
         statusTitle: fs.title,
         name: featureLabelOf(g.label || g.key),
         count: g.items.length,
@@ -343,7 +366,10 @@ export function buildLanes(items: any[], mode: string) {
             ? "\n按标签 feature:" + g.key.replace(/^label:/, "") + " 归组"
             : "\n按分支名推断归组；给 PR 打 feature:<名> 标签即可精确归组")
           + (g.items.length > 1 ? "\n同一版本/变更集在各分支上的 PR 收在此组" : ""),
-        items: g.items,
+        items: g.items.slice().sort(function (a: any, b: any) {
+          var d = prAttentionOf(b) - prAttentionOf(a);
+          return d !== 0 ? d : 0;
+        }),
       };
     });
   }
