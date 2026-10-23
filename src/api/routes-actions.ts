@@ -17,7 +17,7 @@ import { readSessionCreatedPrs } from '../session-pr-scan.js';
 import { listSessionDescendants } from '../session-lineage.js';
 import { githubGraphql, githubGet } from '../github-http.js';
 import { resolvePipelineStage, sortPrsByStage, PIPELINE_STAGES } from '../pipeline-stage.js';
-import { summarizeRunStats, pickActiveProgress } from '../ci-summary.js';
+import { summarizeRunStats, pickActiveProgress, isRunWorthShowing } from '../ci-summary.js';
 
 /**
  * 把 gh 的原始报错翻成「用户能照着做」的一句话。
@@ -1664,7 +1664,13 @@ function findRepoPathUnder(workspacePath: string, wanted: string, identityOf: (p
           return result;
         });
 
-        const data = { at: Date.now(), groups };
+        // 只保留「未完成」与「最近 30 分钟内完成」的运行；整组为空则不返回，
+        // 避免一个 PR 因为历史运行把列表撑满（实测同一个 workflow 能重复出现 3 次）。
+        const now = Date.now();
+        const keptGroups = groups
+          .map((g: any) => ({ ...g, runs: (g.runs || []).filter((r: any) => isRunWorthShowing(r, now)) }))
+          .filter((g: any) => g.runs.length > 0);
+        const data = { at: now, groups: keptGroups };
         prRunsCache.set(cacheKey, { at: Date.now(), data });
         if (prRunsCache.size > 40) {
           const oldest = prRunsCache.keys().next().value;

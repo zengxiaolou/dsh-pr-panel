@@ -138,3 +138,15 @@ export interface ActiveRunProgress {
     ratio: number;
 }
 export declare function pickActiveProgress(jobs: JobInput[] | null | undefined): ActiveRunProgress | null;
+/**
+ * 这条运行值不值得展示。
+ *
+ * 口径（用户 2026-10-23 明确）：未完成的要看；已完成的只看最近 30 分钟内；
+ * 更早的不拉也不显示——历史成功/失败对"现在要不要处理"没有价值。
+ */
+export declare function isRunWorthShowing(run: {
+    status?: string;
+    conclusion?: string;
+    updatedAt?: string;
+    createdAt?: string;
+}, now?: number, windowMs?: number): boolean;

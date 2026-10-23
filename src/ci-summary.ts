@@ -390,3 +390,23 @@ export function pickActiveProgress(jobs: JobInput[] | null | undefined): ActiveR
     ratio,
   };
 }
+
+/**
+ * 这条运行值不值得展示。
+ *
+ * 口径（用户 2026-10-23 明确）：未完成的要看；已完成的只看最近 30 分钟内；
+ * 更早的不拉也不显示——历史成功/失败对"现在要不要处理"没有价值。
+ */
+export function isRunWorthShowing(
+  run: { status?: string; conclusion?: string; updatedAt?: string; createdAt?: string },
+  now: number = Date.now(),
+  windowMs: number = 30 * 60_000,
+): boolean {
+  const status = String(run?.status || '').toLowerCase();
+  if (status === 'in_progress' || status === 'queued' || status === 'waiting' || status === 'requested' || status === 'pending') {
+    return true;
+  }
+  const t = Date.parse(String(run?.updatedAt || run?.createdAt || ''));
+  if (!isFinite(t)) return false;
+  return now - t <= windowMs;
+}

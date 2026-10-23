@@ -1288,6 +1288,11 @@ function ActionsBlock(props: any) {
   };
   var shortName = function (repo: string) { var p = String(repo || '').split('/'); return p[p.length - 1]; };
 
+  // 有运行记录的分支数；其余不显示（30 分钟窗口外的不拉也不列）
+  var shownKeys: any = {};
+  state.groups.forEach(function (g: any) { shownKeys[g.repo + '#' + g.head] = 1; });
+  var hiddenCount = pairs.filter(function (p: any) { return !shownKeys[p.repo + '#' + p.branch]; }).length;
+
   // 按仓库分组展示
   var byRepo: any[] = [];
   var repoIndex: any = {};
@@ -1341,7 +1346,10 @@ function ActionsBlock(props: any) {
                     React.createElement("span", { className: "ghsp-oscard-go" }, "↗"));
                 }));
         }));
-    }));
+    }),
+    hiddenCount > 0
+      ? React.createElement("div", { className: "ghsp-empty2" }, "另有 " + hiddenCount + " 个 PR 分支近 30 分钟没有运行")
+      : null);
 }
 
 

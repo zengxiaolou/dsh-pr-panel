@@ -318,6 +318,18 @@ ok(mid.maxHeight >= 180, '极小空间也有可用高度（下限 180）');
 const tiny = cardPlacementFor({ x: 100, y: 100 }, 800, 300);
 ok(tiny.maxHeight >= 180, '矮视口仍保底 180 高');
 
+console.log('\n--- 4.14 运行展示窗口：未完成 + 最近 30 分钟 ---');
+const { isRunWorthShowing } = await import('../lib/ci-summary.js');
+const nowMs = Date.now();
+const minsAgo = (m) => new Date(nowMs - m * 60000).toISOString();
+ok(isRunWorthShowing({ status: 'in_progress' }, nowMs), '运行中一定显示');
+ok(isRunWorthShowing({ status: 'queued' }, nowMs), '排队中也显示');
+ok(isRunWorthShowing({ status: 'completed', conclusion: 'success', updatedAt: minsAgo(5) }, nowMs), '5 分钟前完成 → 显示');
+ok(isRunWorthShowing({ status: 'completed', conclusion: 'failure', updatedAt: minsAgo(29) }, nowMs), '29 分钟前完成 → 显示');
+ok(!isRunWorthShowing({ status: 'completed', conclusion: 'success', updatedAt: minsAgo(31) }, nowMs), '31 分钟前完成 → 不显示');
+ok(!isRunWorthShowing({ status: 'completed', conclusion: 'success', updatedAt: minsAgo(8 * 60) }, nowMs), '8 小时前 → 不显示');
+ok(!isRunWorthShowing({ status: 'completed' }, nowMs), '没有时间戳 → 不显示（宁可少显示）');
+
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
 console.log('\n--- 4.12 CI/CD tab：本会话 PR 的 Actions（PR 校验 + 合并后） ---');
@@ -330,6 +342,7 @@ ok(routesCi.includes('/api/github/pr-runs'), '路由已注册 PR 运行接口');
 ok(/actions\/runs\?branch=/.test(routesCi), '按分支过滤运行（head 与 base）');
 ok(client.includes('宿主还没重启'), '宿主版本落后时给出可行动的提示，而不是抛 404');
 ok(client.includes('React.useState("rebase")'), '合并方式默认 rebase');
+ok(client.includes('近 30 分钟没有运行'), '无近期运行的分支折成一行说明');
 ok(client.includes('var allowed = ["squash", "merge", "rebase"]'), '仓库不允许 rebase 时仍会回退到可用项');
 ok(client.includes('ghsp-note-warn'), '提示条有独立样式（不占据内容区）');
 
