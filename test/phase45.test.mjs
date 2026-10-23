@@ -362,6 +362,13 @@ eq(prAttention({ state: 'OPEN', mergeStateStatus: 'DIRTY' }), 3, 'DIRTY → 3 �
 eq(prAttention({ state: 'MERGED' }), 0, '已合并不再需要动作');
 eq(prAttention(null), 0, '空值不炸');
 
+console.log('\n--- 4.18 长文本胶囊：装了才用，没装落纯文本 ---');
+const { hasPasteChip } = await import('../lib/ui/session-pr-panel.js');
+ok(hasPasteChip({ __dshPasteChip: { events: 0 } }), '装了 paste-chip → 走胶囊');
+ok(!hasPasteChip({}), '没装 → 走纯文本');
+ok(!hasPasteChip(null), 'window 缺失不炸');
+ok(!hasPasteChip(undefined), 'undefined 不炸');
+
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
 console.log('\n--- 4.12 CI/CD tab：本会话 PR 的 Actions（PR 校验 + 合并后） ---');
@@ -380,6 +387,9 @@ ok(client.includes('ghsp-attn'), '需要处理的 PR 有标记');
 ok(client.includes('window.addEventListener("keydown"'), '浮窗支持键盘导航');
 ok(client.includes('ghsp-row.sel'), '键盘选中行有高亮');
 ok(client.includes('prune --dry-run'), 'worktree 清理只给预览命令，不代执行');
+ok(client.includes('data-composer-chip'), '用胶囊的 DOM 标记判断是否成功');
+ok(client.includes('text.length >= 120'), '只有长文本才占用胶囊形态');
+ok(client.includes('if (after <= before)'), '没生成胶囊会回退成纯文本，不留半截');
 ok(client.includes('pickRecentPrs(items, visiblePrs)'), '浮窗按可见条数渲染（默认 20）');
 ok(client.includes('setVisiblePrs'), '滑到底会递增可见条数');
 eq(client.includes('已显示 '), true, '提示显示「已显示 N / M 条」');

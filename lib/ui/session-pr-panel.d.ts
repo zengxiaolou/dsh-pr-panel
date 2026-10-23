@@ -84,5 +84,11 @@ export declare function cardPlacementFor(pos: {
 };
 export declare function SessionPrOverlay(props: any): any;
 export declare function SessionPrPanel(props: any): any;
+/**
+ * 是否装了我们自己的长文本胶囊插件（dsh-paste-chip）。
+ * 它加载时会挂 window.__dshPasteChip（探针对象，只读不写），
+ * 所以"有没有装"可以零成本判断，不需要配置项。
+ */
+export declare function hasPasteChip(win: any): boolean;
 /** 右列 tab 的标题（chip 上也走这里） */
 export declare function SessionPrTabTitle(props: any): any;
