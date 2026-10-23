@@ -34,6 +34,13 @@ export declare function ciWorkflowLine(wf: any): {
  * 头像走 avatars.githubusercontent.com，支持 ?s= 指定像素，默认原图很大，
  * 列表里 16px 的头像没必要拉几百 KB。
  */
+/**
+ * 取最近 N 个 PR（按更新时间倒序）。
+ *
+ * 一个会话攒到 50+ 条 PR 时，列表会变成"全都完成了"的长卷，
+ * 但真正还可能要看的是最近这批；更早的留给右列面板全量视图。
+ */
+export declare function pickRecentPrs(items: any[], n: number): any[];
 export declare function avatarSrc(url: any, size: number): string;
 /**
  * worktree 展示顺序与截断（纯函数，可单测）：

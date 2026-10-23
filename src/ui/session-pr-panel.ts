@@ -978,6 +978,27 @@ function CiPipelineCard(props: any) {
  * 头像走 avatars.githubusercontent.com，支持 ?s= 指定像素，默认原图很大，
  * 列表里 16px 的头像没必要拉几百 KB。
  */
+/**
+ * 取最近 N 个 PR（按更新时间倒序）。
+ *
+ * 一个会话攒到 50+ 条 PR 时，列表会变成"全都完成了"的长卷，
+ * 但真正还可能要看的是最近这批；更早的留给右列面板全量视图。
+ */
+export function pickRecentPrs(items: any[], n: number): any[] {
+  var list = Array.isArray(items) ? items.slice() : [];
+  var at = function (it: any): number {
+    var t = Date.parse(String((it && (it.updatedAt || it.at || it.createdAt)) || ""));
+    return isFinite(t) ? t : 0;
+  };
+  list.sort(function (a: any, b: any) {
+    var d = at(b) - at(a);
+    if (d !== 0) return d;
+    return (Number(b && b.number) || 0) - (Number(a && a.number) || 0);
+  });
+  var limit = Math.max(1, Math.round(n || 20));
+  return list.slice(0, limit);
+}
+
 export function avatarSrc(url: any, size: number): string {
   var u = String(url == null ? '' : url).trim();
   if (!u) return '';
@@ -1733,6 +1754,9 @@ function SessionPrOverlayInner(props: any) {
       hint ? React.createElement("div", { className: "ghsp-hint" }, hint) : null,
       // tab：功能 / 项目 / CI/CD，一次只渲染一块（不做隐藏渲染，省掉另外两次请求）
       overlayTabBar(overlayTab, setOverlayTab, total),
+      overlayTab === "pr" && total > 20
+        ? React.createElement("div", { className: "ghsp-empty2" }, "只列最近 20 条（共 " + total + " 条，全部在右列面板）")
+        : null,
       overlayTab === "project"
         ? React.createElement(WorkspaceBlock, {
             cwd: sessionCwd,
@@ -1754,7 +1778,7 @@ function SessionPrOverlayInner(props: any) {
         ? null
         : (pendingOnly
           ? React.createElement("ul", { className: "ghsp-list" }, items.map(overlayRow))
-          : React.createElement(Lanes, { items: items, mode: "feature", rowFn: overlayRow }))
+          : React.createElement(Lanes, { items: pickRecentPrs(items, 20), mode: "feature", rowFn: overlayRow }))
     )
   );
 }
@@ -2640,7 +2664,7 @@ function SessionPrPanelBody(props: any) {
             if (pendingOnly) {
               return React.createElement("ul", { className: "ghsp-list", style: { padding: "6px" } }, items.map(panelRow));
             }
-            return React.createElement(Lanes, { items: items, mode: "feature", rowFn: panelRow });
+            return React.createElement(Lanes, { items: pickRecentPrs(items, 20), mode: "feature", rowFn: panelRow });
           })()
     );
   }
