@@ -418,6 +418,8 @@ ok(client.includes('ghsp-row.sel'), '键盘选中行有高亮');
 ok(client.includes('prune --dry-run'), 'worktree 清理只给预览命令，不代执行');
 ok(!client.includes('if (!sessionId || items.length === 0) return null'), '没有 PR 也显示浮窗入口');
 ok(client.includes('本会话暂无'), '空会话的口袋显示占位而不是 #undefined');
+ok(client.includes('usePrPanelOnScreen'), '用面板可见性而不是挂载计数决定是否隐藏');
+ok(!client.includes('if (openPanelCount > 0) return null'), '打开过一次面板不再永久隐藏浮窗');
 ok(client.includes('先看「项目」里的 worktree'), '空态引导到「项目」');
 ok(client.includes('data-composer-chip'), '用胶囊的 DOM 标记判断是否成功');
 ok(client.includes('text.length >= 120'), '只有长文本才占用胶囊形态');
