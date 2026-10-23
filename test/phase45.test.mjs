@@ -369,6 +369,35 @@ ok(!hasPasteChip({}), '没装 → 走纯文本');
 ok(!hasPasteChip(null), 'window 缺失不炸');
 ok(!hasPasteChip(undefined), 'undefined 不炸');
 
+console.log('\n--- 4.19 放进输入框：找对元素、写进去、再校验 ---');
+const { findComposerInput, setComposerValue } = await import('../lib/ui/session-pr-panel.js');
+const mkEl = (opts) => Object.assign({
+  tagName: 'TEXTAREA', value: '', offsetParent: {}, getClientRects: () => [1],
+  closest: () => null, focus() {}, dispatchEvent() { this._fired = (this._fired || 0) + 1; return true; },
+}, opts);
+const composer = mkEl({ id: 'composer' });
+const panelBox = mkEl({ id: 'panel-ta' });
+panelBox.closest = (sel) => (sel === '.ghsp-panel' ? {} : null);
+const fakeDoc = { querySelectorAll: () => [panelBox, composer] };
+eq(findComposerInput(fakeDoc).id, 'composer', '排除面板内的 textarea，取对话框那个');
+eq(findComposerInput({ querySelectorAll: () => [panelBox] }), null, '只有面板输入框时返回 null（不乱写）');
+eq(findComposerInput(null), null, '没有 document 不炸');
+
+// setComposerValue：走原生 setter + input 事件，受控组件才认
+const writes = [];
+const fakeWin = { Event: class { constructor(t) { this.type = t; } }, HTMLTextAreaElement: { prototype: {} } };
+globalThis.window = fakeWin;
+Object.defineProperty(fakeWin.HTMLTextAreaElement.prototype, 'value', {
+  configurable: true,
+  set(v) { writes.push(v); this._v = v; },
+  get() { return this._v; },
+});
+const ta = { tagName: 'TEXTAREA', value: '', isContentEditable: false, focus() {}, dispatchEvent(e) { writes.push('event:' + e.type); return true; } };
+Object.setPrototypeOf(ta, fakeWin.HTMLTextAreaElement.prototype);
+ok(setComposerValue(ta, 'hello'), '写入返回成功');
+ok(writes.indexOf('hello') >= 0, '值确实写进了元素');
+ok(writes.indexOf('event:input') >= 0, '补发 input 事件，React 才会同步受控值');
+
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
 console.log('\n--- 4.12 CI/CD tab：本会话 PR 的 Actions（PR 校验 + 合并后） ---');
@@ -392,7 +421,7 @@ ok(client.includes('本会话暂无'), '空会话的口袋显示占位而不是 
 ok(client.includes('先看「项目」里的 worktree'), '空态引导到「项目」');
 ok(client.includes('data-composer-chip'), '用胶囊的 DOM 标记判断是否成功');
 ok(client.includes('text.length >= 120'), '只有长文本才占用胶囊形态');
-ok(client.includes('if (after <= before)'), '没生成胶囊会回退成纯文本，不留半截');
+ok(client.includes('if (after > before)') && client.includes('finish(fallback())'), '没生成胶囊会回退成纯文本，不留半截');
 ok(client.includes('pickRecentPrs(items, visiblePrs)'), '浮窗按可见条数渲染（默认 20）');
 ok(client.includes('setVisiblePrs'), '滑到底会递增可见条数');
 eq(client.includes('已显示 '), true, '提示显示「已显示 N / M 条」');

@@ -90,5 +90,15 @@ export declare function SessionPrPanel(props: any): any;
  * 所以"有没有装"可以零成本判断，不需要配置项。
  */
 export declare function hasPasteChip(win: any): boolean;
+/**
+ * 找对话框的输入框。
+ *
+ * 为什么不能靠宿主 API：`props.inputActions` 在 DSH 里从未被注入（我查了插件入口与
+ * 宿主产物都没有），所以「放进输入框」一直静默退到剪贴板 —— 提示成功、其实没进去。
+ * 这里直接找 DOM：排除我们自己面板里的 textarea，取最后一个可见的输入区。
+ */
+export declare function findComposerInput(doc: any): any;
+/** 直接往 textarea 写值：走原生 setter + input 事件，React 受控组件才认 */
+export declare function setComposerValue(el: any, text: string): boolean;
 /** 右列 tab 的标题（chip 上也走这里） */
 export declare function SessionPrTabTitle(props: any): any;

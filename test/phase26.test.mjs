@@ -87,7 +87,7 @@ async function runTests() {
   const checksSrc = sliceBetween('/* ---- 卡片：检查 ---- */', 'var checksCard = cardBlock(');
 
   // Composer 降级链
-  const composerSrc = sliceBetween('function pushTextToComposer(props, text) {', 'function targetTone(base) {');
+  const composerSrc = sliceBetween('function pushTextToComposer(props, text, notify', 'function targetTone(base) {');
 
   console.log('--- 1. 打包段定位 ---');
 
@@ -355,45 +355,61 @@ async function runTests() {
   // ============================================================
   // 八、Composer 三级降级
   // ============================================================
-  console.log('\n--- 8. pushTextToComposer：insertText → setDraft → 剪贴板 ---');
+  console.log('\n--- 8. pushTextToComposer：胶囊 → 宿主 API → DOM 写入 → setDraft → 剪贴板 ---');
 
-  test('三个 call site 都存在且顺序为 insertText < setDraft < clipboard', () => {
+  test('降级顺序：先试胶囊，再 insertText，再直接写 DOM，最后 setDraft / 剪贴板', () => {
+    const chipIdx = composerSrc.indexOf('pasteAsChip(text');
     const insertIdx = composerSrc.indexOf('actions.insertText(text)');
+    const domIdx = composerSrc.indexOf('setComposerValue(input, text)');
     const draftIdx = composerSrc.indexOf('actions.setDraft(text)');
     const clipboardIdx = composerSrc.indexOf('navigator.clipboard.writeText(text)');
 
-    assert(insertIdx >= 0, '必须调用 inputActions.insertText(text)（追加，不动已输入草稿）');
-    assert(draftIdx >= 0, '必须调用 inputActions.setDraft(text) 作为第二级降级');
-    assert(clipboardIdx >= 0, '必须调用 navigator.clipboard.writeText(text) 作为最后兜底');
+    assert(chipIdx >= 0, '长文本应先尝试变成胶囊（装了 paste-chip 才有意义）');
+    assert(insertIdx >= 0, '必须保留 inputActions.insertText 作为宿主 API 路径');
+    assert(domIdx >= 0, '必须能直接写输入框 DOM（DSH 实际没有注入 inputActions）');
+    assert(draftIdx >= 0, '必须保留 setDraft 作为降级（会覆盖草稿）');
+    assert(clipboardIdx >= 0, '必须保留剪贴板兜底');
 
-    assert(insertIdx < draftIdx, 'insertText 必须在 setDraft 之前尝试（否则会覆盖用户草稿）');
-    assert(draftIdx < clipboardIdx, 'setDraft 必须在剪贴板之前尝试（写剪贴板是最后手段）');
-
-    // 三级都要有「成功即返回」的短路，否则会继续往下覆盖
-    assert(composerSrc.includes('return "inserted"'), 'insertText 成功必须 return "inserted"');
-    assert(composerSrc.includes('return "replaced"'), 'setDraft 成功必须 return "replaced"');
-    assert(composerSrc.includes('return "copied"'), '剪贴板成功必须 return "copied"');
-    assert(composerSrc.includes('return "failed"'), '全失败必须 return "failed"（供上层 flash 报错）');
-
-    // 每一级都必须先探测能力，不能裸调（浏览器里 insertText 常年缺失）
+    // 源码里 fallback()（含 insertText）定义在前，所以不能按 index 比较先后；
+    // 用「短文本直接 fallback」的分支判断真正的运行顺序：先判断要不要走胶囊。
+    const wantIdx = composerSrc.indexOf('wantChip');
+    assert(wantIdx >= 0, '必须有 wantChip 判断（装了胶囊且文本够长才走胶囊）');
     assert(
-      /typeof actions\.insertText === "function"/.test(composerSrc),
-      'insertText 必须先做 typeof 探测',
+      /if \(!wantChip\)[\s\S]{0,80}finish\(fallback\(\)\)/.test(composerSrc),
+      '短文本 / 没装插件时必须直接走 fallback（打包会被折行，故用正则）',
     );
-    assert(
-      /typeof actions\.setDraft === "function"/.test(composerSrc),
-      'setDraft 必须先做 typeof 探测',
-    );
+    assert(wantIdx < composerSrc.indexOf('pasteAsChip(text, input)'), '胶囊判断要发生在派发粘贴之前');
+    assert(insertIdx < draftIdx, 'insertText 必须在 setDraft 之前（否则覆盖用户草稿）');
+    assert(draftIdx < clipboardIdx, 'setDraft 必须在剪贴板之前');
   });
 
-  test('pushToComposer 包装层对三种结果分别反馈，失败不静默', () => {
+  test('每一级都先探测能力、成功即短路返回', () => {
+    assert(/typeof actions\.insertText === "function"/.test(composerSrc), 'insertText 必须先做 typeof 探测');
+    assert(/typeof actions\.setDraft === "function"/.test(composerSrc), 'setDraft 必须先做 typeof 探测');
+    assert(/hasPasteChip\(/.test(composerSrc), '胶囊路径必须先探测 paste-chip 是否存在');
+    assert(composerSrc.includes('return "inserted"'), 'insertText / DOM 写入成功必须 return "inserted"');
+    assert(composerSrc.includes('return "replaced"'), 'setDraft 成功必须 return "replaced"');
+    assert(composerSrc.includes('return "copied"'), '剪贴板成功必须 return "copied"');
+    assert(composerSrc.includes('return "failed"'), '全失败必须 return "failed"');
+  });
+
+  test('提示必须在验证之后：先写、再核对内容、最后才 flash', () => {
+    // 上一版的 bug：先 flash「已放进输入框」，再异步校验胶囊 —— 结果提示成功、输入框是空的
+    const verifyIdx = composerSrc.indexOf('if (check(');
+    assert(verifyIdx >= 0, '必须有写入后的内容核对（check）');
+    assert(composerSrc.includes('composerHasText'), '核对要用输入框里的真实内容');
+    // flash 只应出现在 finish() 里，且 finish 只在 branch 结果确定后调用
+    const finishDef = composerSrc.indexOf('var finish = function');
+    assert(finishDef >= 0, '必须有唯一的收口函数 finish');
+    const flashCalls = (composerSrc.match(/say\("ok"/g) || []).length;
+    assert.strictEqual(flashCalls, 2, `成功提示只应有两处（胶囊 / 普通），实际 ${flashCalls}`);
+  });
+
+  test('pushToComposer 包装层不再自己 flash（避免重复提示与假成功）', () => {
     const wrapSrc = sliceBetween('function pushToComposer(text) {', 'function postJson(url, body) {');
     assert(wrapSrc.length > 0, '必须能定位 pushToComposer 包装层');
-    assert(wrapSrc.includes('pushTextToComposer(props, text)'), '包装层必须复用 pushTextToComposer');
-    assert(wrapSrc.includes('"failed"'), '包装层必须识别 failed');
-    assert(wrapSrc.includes('"copied"'), '包装层必须识别 copied（提示已复制到剪贴板）');
-    assert(wrapSrc.includes('flash("error"'), '失败必须 flash error，不能静默');
-    assert(wrapSrc.includes('flash("ok"'), '成功必须 flash ok');
+    assert(wrapSrc.includes('pushTextToComposer(props, text, flash)'), '包装层必须把 flash 交给 pushTextToComposer');
+    assert(!wrapSrc.includes('flash("ok"'), '包装层不得再自行 flash 成功（提示统一由校验结果决定）');
   });
 
   // ============================================================
