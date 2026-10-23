@@ -1422,36 +1422,6 @@ export function SessionPrOverlay(props: any) {
   return React.createElement(SessionPrOverlayInner, props);
 }
 
-/**
- * 右列 PR 面板是不是真的显示在屏幕上。
- *
- * 为什么不能用挂载计数：DSH 的右列标签页切走后组件仍然挂着（不卸载），
- * openPanelCount 会一直是 1 —— 于是用户「打开过一次面板，浮窗就再也不出现」。
- * 这里改成看 DOM：面板根节点的 offsetParent / 尺寸为 0 就当它不可见。
- */
-function usePrPanelOnScreen(): boolean {
-  var [onScreen, setOnScreen] = React.useState(false);
-  React.useEffect(function () {
-    if (typeof document === "undefined") return;
-    var tick = function () {
-      var on = false;
-      try {
-        var el: any = document.querySelector(".ghsp-panel");
-        if (el && el.getBoundingClientRect) {
-          var rect = el.getBoundingClientRect();
-          on = el.offsetParent != null && rect.width > 40 && rect.height > 40;
-        }
-      } catch (e) { on = false; }
-      setOnScreen(on);
-    };
-    tick();
-    // 标签页切换不会触发我们自己的状态变化，只能轮询这个布尔值（很便宜）
-    var timer = setInterval(tick, 700);
-    return function () { clearInterval(timer); };
-  }, []);
-  return onScreen;
-}
-
 /** 浮窗位置：localStorage 持久化；坏数据当作没设置 */
 const OVERLAY_POS_KEY = "dsh-pr-panel:overlay-pos";
 
@@ -1490,7 +1460,6 @@ function SessionPrOverlayInner(props: any) {
   var state = pair[0];
   var refresh = pair[1];
   var [open, setOpen] = React.useState(false);
-  var panelOnScreen = usePrPanelOnScreen();
   // 浮窗 tab：功能 / 项目 / CI-CD
   var [overlayTab, setOverlayTab] = React.useState("pr");
   // 「功能」列表先给 20 条，滑到底部再续 20 条（不做假分页：数据早就在内存里）
@@ -1646,8 +1615,8 @@ function SessionPrOverlayInner(props: any) {
 
   var items = state.items || [];
   // 面板已经打开时不再悬浮：它盖住的就是刚打开的那一栏
-  // 面板真的在屏幕上才隐藏浮窗（同一信息不重复占屏）；切成别的标签页后浮窗应回来
-  if (panelOnScreen) return null;
+  // 不再根据「面板是否打开」隐藏浮窗：DSH 的标签页隐藏方式不止一种，
+  // 判断可见性反而制造了「打开一次面板浮窗就消失」的问题。浮窗常驻，代价只是可能重复一点。
   // 只在两个确实没法用的情况下隐藏：
   //   1) 拿不到当前会话（没有它连 cwd 都没有）
   //   2) 右列 PR 面板已经打开（同屏不重复展示）
