@@ -1,0 +1,325 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>overlay-project</title><style>
+button{font:inherit;color:inherit;background:transparent;border:0;padding:0;text-align:inherit;cursor:pointer}
+:root{
+  --dsw-alias-bg-base:#0d1117; --dsw-alias-bg-layer-1:#161b22; --dsw-alias-bg-layer-2:#21262d;
+  --dsw-alias-label-primary:#e6edf3; --dsw-alias-label-secondary:#9198a1; --dsw-alias-label-tertiary:#6e7681;
+  --dsw-alias-border-l1:#30363d; --dsw-alias-border-l2:#30363d; --dsw-alias-brand-primary:#2f81f7;
+  --dsw-alias-state-success-primary:#3fb950; --dsw-alias-state-warn-primary:#d29922;
+  --dsw-specific-menu:rgba(22,27,34,.86); --dsw-menu-backdrop-filter:blur(18px) saturate(1.3);
+}
+html,body{margin:0;background:#0a0d12;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;color:#e6edf3}
+.stage{width:880px;height:700px;display:flex;align-items:center;justify-content:center;overflow:hidden;
+  background:radial-gradient(900px 480px at 50% 0%, #141d28 0%, #0a0d12 65%)}
+.stage .ghsp-overlay{position:static !important;right:auto !important;bottom:auto !important}
+.stage .ghsp-card{width:420px !important;height:auto;max-height:600px !important;display:flex;flex-direction:column;overflow:hidden}
+.stage .ghsp-lanes,.stage .ghsp-ocards{flex:1 1 auto;min-height:0;overflow:auto}
+.stage .ghsp-run-row{align-items:center}
+.stage .stage-pad{height:0}
+</style><style>]{pointer-events:none}
+.ghsp-overlay>*{pointer-events:auto}
+
+.ghsp-pill{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px 0 10px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-specific-menu,color-mix(in srgb, var(--dsw-alias-bg-base) 94%, #000 6%));backdrop-filter:var(--dsw-menu-backdrop-filter,blur(14px) saturate(1.35));-webkit-backdrop-filter:var(--dsw-menu-backdrop-filter,blur(14px) saturate(1.35));color:var(--dsw-alias-label-primary);cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.34);transition:border-color .12s ease,transform .12s ease}
+.ghsp-pill:hover{border-color:var(--dsw-alias-border-l2);transform:translateY(-1px)}
+.ghsp-pill-text{font-weight:500;letter-spacing:.01em}
+.ghsp-pill-delta{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.ghsp-pill-count{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--dsw-alias-brand-primary);color:#fff;font-size:10px;font-weight:600;line-height:1}
+
+.ghsp-card{width:372px;max-height:min(56vh,470px);display:flex;flex-direction:column;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-specific-menu,color-mix(in srgb, var(--dsw-alias-bg-base) 94%, #000 6%));backdrop-filter:var(--dsw-menu-backdrop-filter,blur(14px) saturate(1.35));-webkit-backdrop-filter:var(--dsw-menu-backdrop-filter,blur(14px) saturate(1.35));box-shadow:0 18px 44px rgba(0,0,0,.34);overflow:hidden}
+.ghsp-card-head{display:flex;align-items:center;gap:8px;padding:9px 10px 9px 12px;border-bottom:1px solid var(--dsw-alias-border-l2)}
+.ghsp-card-title{flex:1;min-width:0;font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghsp-card-sub{font-size:11px;color:var(--dsw-alias-label-secondary)}
+.ghsp-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:6px;border:0;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+.ghsp-icon-btn:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
+.ghsp-list{margin:0;padding:4px;list-style:none;overflow:auto}
+/* 阶段/功能泳道：标题行吸顶，滚动时仍知道自己在哪一段 */
+.ghsp-lanes{overflow:auto;flex:1;min-height:0}
+.ghsp-lane{padding-bottom:2px}
+.ghsp-lane+.ghsp-lane{border-top:1px solid var(--dsw-alias-border-l2)}
+.ghsp-lane-head{display:flex;align-items:center;gap:6px;padding:7px 10px 3px;position:sticky;top:0;background:var(--dsw-specific-menu,color-mix(in srgb, var(--dsw-alias-bg-base) 94%, #000 6%));backdrop-filter:var(--dsw-menu-backdrop-filter,blur(14px));-webkit-backdrop-filter:var(--dsw-menu-backdrop-filter,blur(14px));z-index:1}
+/* 阶段胶囊：实心底色 + 白字。原来的「透明底 + 彩色描边」在深色背景上发虚，
+   一排下来像一堆空框；实心块更容易一眼扫出「这是 Release 还是 Prod」。 */
+.ghsp-lane-chip{font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:999px;border:0;line-height:1.4;color:#fff;background:#6e7781}
+/* tag 表达的是「这个功能完了没有」，不是它在哪个环境：
+   pending 要处理（琥珀）、done 收工（绿）、closed 放弃（灰） */
+.ghsp-lane-chip.pending{background:#bf8700}
+.ghsp-lane-chip.done{background:#1a7f37}
+.ghsp-lane-chip.closed{background:#6e7781}
+.ghsp-lane-count{font-size:10px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.ghsp-lane-name{flex:1;min-width:0;font-size:11px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghsp-lane-chevron{font-size:9px;line-height:1;width:9px;flex:0 0 auto;color:var(--dsw-alias-label-secondary)}
+.ghsp-lane-toggle{width:100%;border:0;background:transparent;font:inherit;text-align:left;cursor:pointer}
+.ghsp-lane-toggle:hover .ghsp-lane-name,.ghsp-lane-toggle:hover .ghsp-lane-count{color:var(--dsw-alias-label-primary)}
+.ghsp-lane.collapsed .ghsp-lane-head{padding-bottom:5px}
+/* 浮窗 tab：功能 / 项目 / CI-CD */
+.ghsp-otabs{display:flex;gap:2px;padding:6px 8px 2px}
+.ghsp-otab{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;border:1px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary);font-size:11px;cursor:pointer}
+.ghsp-otab:hover{color:var(--dsw-alias-label-primary)}
+.ghsp-otab.active{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2)}
+.ghsp-otab-count{font-size:9px;padding:0 4px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+/* 卡片式内容区：一块一张卡，卡片里放具体条目 */
+.ghsp-ocards{display:flex;flex-direction:column;gap:6px;padding:6px 8px 8px;overflow:auto;flex:1;min-height:0}
+.ghsp-ocards-sum{font-size:10px;color:var(--dsw-alias-label-secondary);padding:0 2px}
+.ghsp-oscard{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:6px 8px;background:var(--dsw-alias-bg-layer-1)}
+.ghsp-oscard-link{width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer}
+.ghsp-oscard-link:hover{border-color:var(--dsw-alias-brand-primary,#2f81f7);background:var(--dsw-alias-bg-layer-2)}
+.ghsp-oscard-go{flex:0 0 auto;font-size:10px;color:var(--dsw-alias-label-secondary)}
+.ghsp-oscard-head{display:flex;align-items:center;gap:6px;min-width:0}
+.ghsp-oscard-title{flex:1;min-width:0;font-size:12px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghsp-oscard-sub{flex:0 0 auto;font-size:10px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:52%}
+.ghsp-wts{margin:4px 0 0;padding:0;list-style:none}
+.ghsp-wt{display:flex;align-items:center;gap:5px;padding:1px 2px;font-size:10px;color:var(--dsw-alias-label-secondary)}
+.ghsp-wt.current{color:var(--dsw-alias-label-primary)}
+.ghsp-wt-mark{font-size:8px;flex:0 0 auto}
+.ghsp-wt-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:44%}
+.ghsp-wt-branch{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-tertiary)}
+.ghsp-wt-tag{flex:0 0 auto;font-size:9px;padding:0 4px;border-radius:4px;border:1px solid currentColor;color:var(--dsw-alias-state-warn-primary,#9a6700)}
+.ghsp-wt.more{font-size:9px;color:var(--dsw-alias-label-tertiary)}
+.ghsp-bar-wrap{height:3px;margin-top:5px;border-radius:2px;background:var(--dsw-alias-bg-layer-2);overflow:hidden}
+.ghsp-bar-fill{height:100%;background:var(--dsw-alias-brand-primary,#2f81f7);transition:width .3s ease}
+.ghsp-empty2{padding:14px 10px;text-align:center;font-size:11px;color:var(--dsw-alias-label-secondary)}
+
+/* 浮窗里的「项目」卡片：一个项目一行卡，重点是「当前在用哪个 worktree」 */
+.ghsp-pcard{border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:7px 9px;background:var(--dsw-alias-bg-layer-1)}
+.ghsp-pcard-top{display:flex;align-items:baseline;gap:6px;min-width:0}
+.ghsp-pcard-repo{flex:1;min-width:0;font-size:12px;font-weight:600;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghsp-pcard-wt{flex:0 0 auto;font-size:10px;color:var(--dsw-alias-label-tertiary);font-variant-numeric:tabular-nums}
+.ghsp-pcard-use{display:flex;align-items:center;gap:5px;margin-top:4px;min-width:0}
+.ghsp-pcard-dot{font-size:8px;color:var(--dsw-alias-state-success-primary,#1a7f37);flex:0 0 auto}
+.ghsp-pcard-dot.unknown{color:var(--dsw-alias-label-tertiary)}
+.ghsp-pcard-name{flex:1;min-width:0;font-size:11px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.ghsp-pcard-dirty{flex:0 0 auto;font-size:10px;color:var(--dsw-alias-state-warn-primary,#9a6700)}
+.ghsp-pcard-branch{margin-top:2px;padding-left:13px;font-size:10px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghsp-pcard-more{color:var(--dsw-alias-label-tertiary)}
+.ghsp-wf-list{margin-top:4px;display:flex;flex-direction:column;gap:1px}
+.ghsp-wf-row{display:flex;align-items:center;gap:6px;width:100%;padding:3px 4px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;text-align:left;font:inherit}
+.ghsp-wf-row:hover{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
+.ghsp-wf-name{flex:1;min-width:0;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghsp-run-list{margin-top:4px;display:flex;flex-direction:column;gap:1px}
+.ghsp-run-row{display:flex;align-items:center;gap:6px;width:100%;padding:4px 4px;border:0;border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;text-align:left;font:inherit}
+.ghsp-run-row:hover{background:var(--dsw-alias-bg-layer-2)}
+.ghsp-run-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.ghsp-run-name{font-size:11px;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghsp-run-sub{font-size:9px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghsp-run-right{flex:0 0 auto;font-size:10px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-secondary)}
+.ghsp-prruns{margin-top:6px}
+.ghsp-prruns-head{display:flex;align-items:baseline;gap:6px;min-width:0;padding:0 2px}
+.ghsp-prruns-num{flex:0 0 auto;font-size:10px;font-weight:600;color:var(--dsw-alias-label-secondary)}
+.ghsp-prruns-branch{flex:1;min-width:0;font-size:10px;color:var(--dsw-alias-label-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghsp-run-sub.empty{padding:2px 4px}
+.ghsp-note-warn{margin:0 0 2px;padding:5px 7px;border-radius:6px;font-size:10px;color:var(--dsw-alias-state-warn-primary,#9a6700);background:color-mix(in srgb, var(--dsw-alias-state-warn-primary,#9a6700) 12%, transparent);border:1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary,#9a6700) 35%, transparent)}
+.ghsp-run-phase{display:inline-block;margin-right:4px;padding:0 3px;border-radius:3px;font-size:8px;border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary)}
+.ghsp-run-phase.after{color:var(--dsw-alias-state-success-primary,#1a7f37);border-color:currentColor}
+
+/* 浮窗里的 CI/CD 紧凑条 */
+.ghsp-ci{border-top:1px solid var(--dsw-alias-border-l2);border-bottom:1px solid var(--dsw-alias-border-l2)}
+.ghsp-ci-head{display:flex;align-items:center;gap:6px;width:100%;padding:6px 10px;border:0;background:transparent;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left}
+.ghsp-ci-head:hover{background:var(--dsw-alias-bg-layer-2)}
+.ghsp-ci-label{font-size:10px;font-weight:700;letter-spacing:.06em;color:var(--dsw-alias-label-secondary)}
+.ghsp-ci-sum,.ghsp-ci-muted{font-size:10px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.ghsp-ci-chevron{margin-left:auto;font-size:9px;color:var(--dsw-alias-label-secondary)}
+.ghsp-ci-list{margin:0;padding:0 6px 6px;list-style:none}
+.ghsp-ci-row{display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:6px;font-size:11px}
+.ghsp-ci-row:hover{background:var(--dsw-alias-bg-layer-2)}
+.ghsp-ci-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghsp-ci-time{flex:0 0 auto;font-size:10px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.ghsp-mode-bar{display:flex;align-items:center;gap:4px;padding:6px 10px 2px}
+.ghsp-mode-btn{padding:1px 8px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2);background:transparent;color:var(--dsw-alias-label-secondary);font-size:10px;line-height:1.7;cursor:pointer}
+.ghsp-mode-btn:hover{color:var(--dsw-alias-label-primary)}
+.ghsp-mode-btn.active{border-color:var(--dsw-alias-brand-primary,#2f81f7);color:var(--dsw-alias-brand-primary,#2f81f7);background:rgba(47,129,247,.1)}
+.ghsp-row{display:flex;flex-direction:column;gap:4px;width:100%;padding:8px 9px;border-radius:8px;border:0;background:transparent;text-align:left;cursor:pointer;color:inherit}
+.ghsp-row:hover{background:var(--dsw-alias-bg-layer-2)}
+.ghsp-row-top{display:flex;align-items:center;gap:6px;min-width:0}
+/* 头像：列表 13px、详情头 14px，统一圆片 */
+.ghsp-av{flex:0 0 auto;border-radius:50%;object-fit:cover;background:var(--dsw-alias-bg-layer-2);vertical-align:middle}
+.ghsp-av.ph{display:inline-flex;align-items:center;justify-content:center;color:var(--dsw-alias-label-secondary);font-weight:600}
+.ghsp-meta-author{display:inline-flex;align-items:center;gap:4px}
+
+.ghsp-row-num{font-size:11px;font-weight:600;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.ghsp-row-title{flex:1;min-width:0;font-size:12px;line-height:1.35;color:var(--dsw-alias-label-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghsp-row-bottom{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dsw-alias-label-secondary)}
+.ghsp-row-meta{display:flex;align-items:center;gap:7px;min-width:0;font-size:11px;color:var(--dsw-alias-label-secondary)}
+.ghsp-row-repo{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto}
+/* 来源小标：这个 PR 是派下去的子代理会话建的，不是主会话亲手建的 */
+.ghsp-origin{display:inline-flex;align-items:center;height:14px;padding:0 5px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);font-size:9px;font-weight:600;letter-spacing:.04em;flex:0 0 auto;white-space:nowrap}
+.ghsp-add{color:var(--dsw-alias-state-success-primary,#3fb950)}.ghsp-del{color:var(--dsw-alias-state-error-primary,#f85149)}
+.ghsp-dot{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
+.ghsp-dot.pass{background:var(--dsw-alias-state-success-primary,#3fb950)}.ghsp-dot.fail{background:var(--dsw-alias-state-error-primary,#f85149)}.ghsp-dot.pending{background:var(--dsw-alias-state-warn-primary,#d29922)}.ghsp-dot.none{background:var(--dsw-alias-state-idle-primary)}
+
+.ghsp-badge{display:inline-flex;align-items:center;height:17px;padding:0 6px;border-radius:999px;font-size:10px;font-weight:600;letter-spacing:.02em;border:1px solid transparent}
+.ghsp-badge.open{color:var(--dsw-alias-state-success-primary,#3fb950);border-color:color-mix(in srgb, var(--dsw-alias-state-success-primary,#3fb950) 40%, transparent);background:color-mix(in srgb, var(--dsw-alias-state-success-primary,#3fb950) 10%, transparent)}
+.ghsp-badge.draft{color:var(--dsw-alias-label-secondary);border-color:var(--dsw-alias-border-l2)}
+.ghsp-badge.merged{color:#a371f7;border-color:rgba(163,113,247,.4);background:rgba(163,113,247,.1)}
+.ghsp-badge.closed{color:var(--dsw-alias-state-error-primary,#f85149);border-color:color-mix(in srgb, var(--dsw-alias-state-error-primary,#f85149) 40%, transparent);background:color-mix(in srgb, var(--dsw-alias-state-error-primary,#f85149) 10%, transparent)}
+.ghsp-badge.unknown{color:var(--dsw-alias-label-secondary);border-color:var(--dsw-alias-border-l2)}
+
+.ghsp-panel{display:flex;flex-direction:column;height:100%;min-height:0;font-size:12px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);overflow:hidden}
+/* 头部做成与内容卡片同宽、同圆角的卡片：原来它是通栏底色，而下面两列有 10px 内缩，
+   视觉上像是「头部比内容宽一截」 */
+.ghsp-head{flex:0 0 auto;margin:10px 10px 0;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1)}
+.ghsp-head-top{display:flex;align-items:center;gap:8px;min-width:0}
+.ghsp-repo{font-size:11px;color:var(--dsw-alias-label-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghsp-num{font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.ghsp-head-actions{margin-left:auto;display:flex;align-items:center;gap:2px}
+.ghsp-title{margin:5px 0 0;font-size:13px;line-height:1.45;font-weight:600;color:var(--dsw-alias-label-primary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ghsp-meta{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-top:6px;font-size:11px;color:var(--dsw-alias-label-secondary);min-width:0}
+.ghsp-branch{display:inline-flex;align-items:center;gap:5px;max-width:100%;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px}
+.ghsp-branch>span:first-child{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.ghsp-checks{display:inline-flex;align-items:center;gap:5px}
+
+.ghsp-scroll{flex:1 1 auto;min-height:0;overflow:auto;overscroll-behavior:contain}
+.ghsp-file{border-bottom:1px solid var(--dsw-alias-border-l1)}
+.ghsp-file-head{display:flex;align-items:center;gap:7px;width:100%;padding:7px 10px;border:0;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;position:sticky;top:0;z-index:1}
+.ghsp-file-head:hover{background:var(--dsw-alias-bg-layer-2)}
+.ghsp-caret{width:10px;flex:0 0 auto;color:var(--dsw-alias-label-secondary);transition:transform .12s ease}
+.ghsp-caret.open{transform:rotate(90deg)}
+.ghsp-path{flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+.ghsp-stat{font-size:10.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ghsp-diff{margin:0;padding:2px 0 6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;line-height:1.55;background:var(--dsw-alias-bg-base);overflow-x:auto}
+.ghsp-line{display:block;padding:0 10px;white-space:pre;tab-size:2}
+.ghsp-line.add{background:color-mix(in srgb, var(--dsw-alias-state-success-primary,#3fb950) 13%, transparent);color:var(--dsw-alias-state-success-primary,#3fb950)}
+.ghsp-line.del{background:color-mix(in srgb, var(--dsw-alias-state-error-primary,#f85149) 13%, transparent);color:var(--dsw-alias-state-error-primary,#f85149)}
+.ghsp-line.hunk{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1);margin:4px 0;padding-top:2px;padding-bottom:2px}
+.ghsp-line.meta{color:var(--dsw-alias-label-secondary);opacity:.75}
+.ghsp-more{padding:6px 10px;font-size:11px;color:var(--dsw-alias-label-secondary)}
+
+.ghsp-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;height:100%;padding:24px;text-align:center;color:var(--dsw-alias-label-secondary);font-size:12px}
+.ghsp-empty strong{color:var(--dsw-alias-label-primary);font-size:13px}
+.ghsp-skeleton{padding:14px 12px;display:flex;flex-direction:column;gap:8px}
+.ghsp-bar{height:10px;border-radius:5px;background:var(--dsw-alias-bg-layer-2);animation:ghsp-pulse 1.2s ease-in-out infinite}
+.ghsp-bar.w60{width:60%}.ghsp-bar.w40{width:40%}.ghsp-bar.w80{width:80%}
+@keyframes ghsp-pulse{0%,100%{opacity:.55}50%{opacity:1}}
+.ghsp-error{padding:14px 12px;font-size:12px;color:var(--dsw-alias-state-error-primary);display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.ghsp-btn{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:6px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-size:11px;cursor:pointer}
+.ghsp-btn:hover{border-color:var(--dsw-alias-border-l2)}
+.ghsp-tabs{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);overflow-x:auto;flex:0 0 auto}
+.ghsp-tab{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:999px;border:1px solid var(--dsw-alias-border-l1);background:transparent;color:var(--dsw-alias-label-secondary);font-size:11px;cursor:pointer;white-space:nowrap}
+.ghsp-tab.active{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-2)}
+
+/* ---- v2：更强的状态对比 + 面板分段 ---- */
+.ghsp-badge{height:18px;padding:0 7px;font-size:10px;letter-spacing:.02em;border-width:1px}
+.ghsp-badge.open{color:#1a7f37;background:rgba(26,127,55,.10);border-color:rgba(26,127,55,.4)}
+.ghsp-badge.merged{color:#6e40c9;background:rgba(110,64,201,.10);border-color:rgba(110,64,201,.4)}
+.ghsp-badge.closed{color:#cf222e;background:rgba(207,34,46,.10);border-color:rgba(207,34,46,.4)}
+.ghsp-badge.draft{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-border-l2)}
+.ghsp-badge.unknown{color:var(--dsw-alias-label-secondary);background:transparent;border-color:var(--dsw-alias-border-l2)}
+body[data-ds-dark-theme] .ghsp-badge.open{color:#3fb950;background:rgba(63,185,80,.16);border-color:rgba(63,185,80,.5)}
+body[data-ds-dark-theme] .ghsp-badge.merged{color:#b392f0;background:rgba(163,113,247,.18);border-color:rgba(163,113,247,.5)}
+body[data-ds-dark-theme] .ghsp-badge.closed{color:#f85149;background:rgba(248,81,73,.18);border-color:rgba(248,81,73,.5)}
+
+
+.ghsp-sec{padding:10px 12px}
+.ghsp-sec-title{padding:8px 12px 4px;font-size:10px;font-weight:600;letter-spacing:.06em;color:var(--dsw-alias-label-secondary);text-transform:uppercase}
+.ghsp-muted{color:var(--dsw-alias-label-secondary);font-size:11px}
+.ghsp-actions{display:flex;flex-wrap:wrap;gap:6px}
+.ghsp-btn-primary{background:var(--dsw-alias-brand-primary);border-color:transparent;color:#fff}
+.ghsp-btn-primary:hover{filter:brightness(1.08)}
+.ghsp-btn[disabled]{opacity:.5;cursor:default}
+.ghsp-btn-primary[disabled]{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary)}
+
+.ghsp-md{font-size:12px;line-height:1.65;color:var(--dsw-alias-label-primary);word-break:break-word}
+.ghsp-md p{margin:0 0 8px}
+.ghsp-md h3,.ghsp-md h4,.ghsp-md h5{margin:12px 0 6px;font-size:12.5px;font-weight:600}
+.ghsp-md ul,.ghsp-md ol{margin:0 0 8px;padding-left:18px}
+.ghsp-md li{margin:2px 0}
+.ghsp-md code{padding:1px 4px;border-radius:4px;background:var(--dsw-alias-bg-layer-2);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
+.ghsp-md pre{margin:0 0 8px;padding:8px;border-radius:8px;background:var(--dsw-alias-bg-layer-2);overflow:auto}
+.ghsp-md pre code{background:transparent;padding:0}
+.ghsp-md a{color:var(--dsw-alias-brand-primary);text-decoration:none}
+.ghsp-md img{max-width:100%;border-radius:6px}
+.ghsp-md blockquote{margin:0 0 8px;padding-left:8px;border-left:2px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary)}
+
+.ghsp-note{padding:9px 12px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.ghsp-note-head{display:flex;align-items:center;gap:6px;margin-bottom:5px;font-size:11px}
+.ghsp-note-author{font-weight:600;color:var(--dsw-alias-label-primary)}
+.ghsp-note-time{margin-left:auto;color:var(--dsw-alias-label-secondary);font-size:10px}
+.ghsp-note .ghsp-icon-btn{margin-left:6px}
+
+.ghsp-commit{display:flex;align-items:center;gap:8px;padding:3px 12px;font-size:11px;color:var(--dsw-alias-label-secondary)}
+.ghsp-commit code{color:var(--dsw-alias-label-secondary);font-size:10.5px}
+.ghsp-commit-msg{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-primary)}
+
+.ghsp-check{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11px}
+.ghsp-check-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghsp-check-state{color:var(--dsw-alias-label-secondary);font-size:10.5px}
+
+.ghsp-notice{margin:8px 12px;padding:8px 10px;border-radius:8px;font-size:11px;line-height:1.5;color:var(--dsw-alias-state-warn-primary,#d29922);background:color-mix(in srgb, var(--dsw-alias-state-warn-primary,#d29922) 12%, transparent)}
+.ghsp-file-row{display:flex;align-items:center;gap:8px;padding:5px 12px;font-size:11px}
+.ghsp-file-row:hover{background:var(--dsw-alias-bg-layer-2)}
+.ghsp-file-row .ghsp-path{flex:1}
+.ghsp-file-head{display:flex;align-items:center;gap:2px;padding:0 6px 0 10px}
+.ghsp-file-toggle{display:flex;flex:1;align-items:center;gap:7px;min-width:0;padding:7px 4px;border:0;background:transparent;color:inherit;cursor:pointer;text-align:left}
+.ghsp-file-action{flex:0 0 auto;width:auto;padding:0 6px;font-size:10.5px}
+
+.ghsp-line.pickable{cursor:pointer}
+.ghsp-line.pickable:hover{background:var(--dsw-alias-bg-layer-2)}
+.ghsp-line.sel{background:color-mix(in srgb, var(--dsw-alias-brand-primary) 22%, transparent);outline:1px solid var(--dsw-alias-brand-primary);outline-offset:-1px}
+
+.ghsp-commentbar{flex:0 0 auto;display:flex;flex-direction:column;gap:6px;padding:9px 12px 10px;border-top:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}
+.ghsp-commentbar-head{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dsw-alias-label-secondary)}
+.ghsp-commentbar-head>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ghsp-textarea{width:100%;min-height:54px;max-height:160px;resize:vertical;padding:6px 8px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);font-size:11px;line-height:1.5;font-family:inherit;outline:none}
+.ghsp-textarea:focus{border-color:var(--dsw-alias-brand-primary)}
+
+.ghsp-toast{flex:0 0 auto;margin:8px 12px 0;padding:6px 9px;border-radius:8px;font-size:11px}
+.ghsp-toast.ok{color:var(--dsw-alias-state-success-primary,#3fb950);background:color-mix(in srgb, var(--dsw-alias-state-success-primary,#3fb950) 12%, transparent)}
+.ghsp-toast.error{color:var(--dsw-alias-state-error-primary,#f85149);background:color-mix(in srgb, var(--dsw-alias-state-error-primary,#f85149) 12%, transparent)}
+.ghsp-toast.info{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2)}
+
+/* ---- v3：左右两栏 + 目标分支语义色 ---- */
+.ghsp-panel{container-type:inline-size}
+.ghsp-cols{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 248px}
+.ghsp-col-main{min-width:0;overflow:auto;padding-bottom:8px}
+.ghsp-col-side{min-width:0;overflow:auto;padding:10px 10px 16px;border-left:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1)}
+.ghsp-block{padding:10px 12px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.ghsp-block:last-child{border-bottom:0}
+.ghsp-block-title{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:11px;font-weight:600;letter-spacing:.03em;color:var(--dsw-alias-label-secondary);text-transform:uppercase}
+.ghsp-block-meta{margin-left:auto;font-weight:400;text-transform:none;letter-spacing:0;color:var(--dsw-alias-label-secondary)}
+.ghsp-side-block{display:flex;flex-direction:column;gap:5px;padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.ghsp-side-block:last-child{border-bottom:0;margin-bottom:0;padding-bottom:0}
+.ghsp-side-title{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--dsw-alias-label-secondary)}
+.ghsp-sub-title{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--dsw-alias-label-secondary);margin:8px 0 4px}
+
+.ghsp-target{display:inline-flex;align-items:center;justify-content:center;height:17px;max-width:132px;padding:0 6px;border-radius:999px;font-size:10px;font-weight:600;line-height:1;border:1px solid transparent;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
+/* 默认（浅色主题）：深字 + 浅底；深色主题在下面改成亮字 + 半透明底 */
+.ghsp-target.main{color:#6e40c9;background:rgba(110,64,201,.10);border-color:rgba(110,64,201,.35)}
+.ghsp-target.release{color:#9a6700;background:rgba(154,103,0,.10);border-color:rgba(154,103,0,.35)}
+.ghsp-target.test{color:#0f7b8a;background:rgba(15,123,138,.10);border-color:rgba(15,123,138,.35)}
+.ghsp-target.dev{color:#0b57d0;background:rgba(11,87,208,.10);border-color:rgba(11,87,208,.35)}
+.ghsp-target.other{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-border-l2)}
+body[data-ds-dark-theme] .ghsp-target.main{color:#d2a8ff;background:rgba(163,113,247,.18);border-color:rgba(163,113,247,.5)}
+body[data-ds-dark-theme] .ghsp-target.release{color:#e3b341;background:rgba(210,153,34,.18);border-color:rgba(210,153,34,.5)}
+body[data-ds-dark-theme] .ghsp-target.test{color:#39c5cf;background:rgba(57,197,207,.16);border-color:rgba(57,197,207,.45)}
+body[data-ds-dark-theme] .ghsp-target.dev{color:#58a6ff;background:rgba(88,166,255,.16);border-color:rgba(88,166,255,.45)}
+
+@container (max-width: 620px) {
+  /* 窄栏：整块一起滚（两列各自滚动会互相抢高度），主内容在前，审批/操作跟在后面 */
+  .ghsp-cols{grid-template-columns:1fr;overflow:auto}
+  .ghsp-col-main{order:1;overflow:visible}
+  .ghsp-col-side{order:2;overflow:visible;border-left:0;border-top:1px solid var(--dsw-alias-border-l1)}
+  .ghsp-head{padding:10px 10px 9px}
+  .ghsp-meta{row-gap:4px}
+  /* 窄栏里分支 + 目标 tag 单独占一整行，别把分支名挤成「p…」 */
+  .ghsp-meta .ghsp-branch{flex:1 1 100%;margin-top:2px}
+}
+
+/* ---- v4：卡片式分区 + 懒加载骨架 + 高亮 ---- */
+.ghsp-col-main,.ghsp-col-side{display:flex;flex-direction:column;gap:10px;padding:10px}
+.ghsp-col-side{background:transparent;border-left:1px solid var(--dsw-alias-border-l1)}
+.ghsp-card-block{border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);overflow:hidden;flex:0 0 auto}
+.ghsp-card-head2{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.ghsp-card-block-title{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--dsw-alias-label-secondary)}
+.ghsp-card-block-meta{margin-left:auto;font-size:11px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.ghsp-card-block-actions{margin-left:auto;display:flex;align-items:center;gap:6px}
+.ghsp-card-block-meta + .ghsp-card-block-actions{margin-left:8px}
+.ghsp-card-body{padding:10px 12px}
+.ghsp-card-body.flush{padding:0}
+.ghsp-card-body .ghsp-file:last-child{border-bottom:0}
+.ghsp-card-body .ghsp-note:last-child{border-bottom:0}
+
+.ghsp-btn-sm{height:21px;padding:0 7px;font-size:10.5px}
+.ghsp-inline-loading{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;color:var(--dsw-alias-label-secondary)}
+.ghsp-spinner{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--dsw-alias-border-l2);border-top-color:var(--dsw-alias-brand-primary);animation:ghsp-spin .7s linear infinite}
+@keyframes ghsp-spin{to{transform:rotate(360deg)}}
+.ghsp-skel-row{height:10px;border-radius:5px;background:var(--dsw-alias-bg-layer-2);margin:8px 12px;animation:ghsp-pulse 1.2s ease-in-out infinite}
+.ghsp-fade{position:relative;max-height:280px;overflow:hidden}
+.ghsp-fade:after{content:</style></head><body><div class="stage"><div class="ghsp-overlay"><section class="ghsp-card"><div class="ghsp-card-head"><span style="display:inline-flex;color:#e6edf3">◉</span><span class="ghsp-card-title">本会话提交的 PR</span><span class="ghsp-card-sub">12 · 刚刚</span><button class="ghsp-icon-btn">⟳</button><button class="ghsp-icon-btn">≡</button></div><div class="ghsp-otabs" role="group"><button class="ghsp-otab" aria-pressed="false">功能<span class="ghsp-otab-count">12</span></button><button class="ghsp-otab active" aria-pressed="true">项目</button><button class="ghsp-otab" aria-pressed="false">CI/CD</button></div><div class="ghsp-ocards"><div class="ghsp-pcard"><div class="ghsp-pcard-top"><span class="ghsp-pcard-repo">wallet-api</span><span class="ghsp-pcard-wt">218 wt</span></div><div class="ghsp-pcard-use"><span class="ghsp-pcard-dot">●</span><span class="ghsp-pcard-name">worktrees/bill-remap-dev-r4</span><span class="ghsp-pcard-dirty">2 未提交</span></div><div class="ghsp-pcard-branch">fix/bill-remap-backport-to-dev-r4<span class="ghsp-pcard-more"> · 本会话另用 1 个</span></div></div><div class="ghsp-pcard"><div class="ghsp-pcard-top"><span class="ghsp-pcard-repo">wallet-web</span><span class="ghsp-pcard-wt">37 wt</span></div><div class="ghsp-pcard-use"><span class="ghsp-pcard-dot">●</span><span class="ghsp-pcard-name">wallet-web</span></div><div class="ghsp-pcard-branch">fix/portal-stats-accountbill</div></div><div class="ghsp-pcard"><div class="ghsp-pcard-top"><span class="ghsp-pcard-repo">wallet-ios</span><span class="ghsp-pcard-wt">本地无副本</span></div></div></div></section></div></div></body></html>
