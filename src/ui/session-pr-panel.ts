@@ -1437,6 +1437,8 @@ function SessionPrOverlayInner(props: any) {
   var [open, setOpen] = React.useState(false);
   // 浮窗 tab：功能 / 项目 / CI-CD
   var [overlayTab, setOverlayTab] = React.useState("pr");
+  // 「功能」列表先给 20 条，滑到底部再续 20 条（不做假分页：数据早就在内存里）
+  var [visiblePrs, setVisiblePrs] = React.useState(20);
   // 右键菜单：{x, y, item}；同时用一个短 toast 反馈「已复制」
   var [menu, setMenu] = React.useState(null as any);
   var [hint, setHint] = React.useState(null as any);
@@ -1754,8 +1756,8 @@ function SessionPrOverlayInner(props: any) {
       hint ? React.createElement("div", { className: "ghsp-hint" }, hint) : null,
       // tab：功能 / 项目 / CI/CD，一次只渲染一块（不做隐藏渲染，省掉另外两次请求）
       overlayTabBar(overlayTab, setOverlayTab, total),
-      overlayTab === "pr" && total > 20
-        ? React.createElement("div", { className: "ghsp-empty2" }, "只列最近 20 条（共 " + total + " 条，全部在右列面板）")
+      overlayTab === "pr" && total > visiblePrs
+        ? React.createElement("div", { className: "ghsp-empty2" }, "已显示 " + visiblePrs + " / " + total + " 条，继续下滑加载更多")
         : null,
       overlayTab === "project"
         ? React.createElement(WorkspaceBlock, {
@@ -1778,7 +1780,14 @@ function SessionPrOverlayInner(props: any) {
         ? null
         : (pendingOnly
           ? React.createElement("ul", { className: "ghsp-list" }, items.map(overlayRow))
-          : React.createElement(Lanes, { items: pickRecentPrs(items, 20), mode: "feature", rowFn: overlayRow }))
+          : React.createElement(Lanes, {
+              items: pickRecentPrs(items, visiblePrs),
+              mode: "feature",
+              rowFn: overlayRow,
+              onLoadMore: function () {
+                setVisiblePrs(function (v: number) { return v + 20; });
+              },
+            }))
     )
   );
 }
@@ -2199,6 +2208,8 @@ function clipMarkdown(text: string, limit: number) {
 
 /** 右列 PR 面板（v4）：卡片式分区 + 懒加载 diff + 骨架屏 */
 function SessionPrPanelBody(props: any) {
+  // 面板列表先给 20 条，滑到底续 20 条（数据已在内存，不做真分页）
+  var [panelVisible, setPanelVisible] = React.useState(20);
   // 面板自己开着的时候，右下角浮窗就是在盖自己：挂载计数让浮窗自动让位
   React.useEffect(function () {
     openPanelCount += 1;
@@ -2664,7 +2675,12 @@ function SessionPrPanelBody(props: any) {
             if (pendingOnly) {
               return React.createElement("ul", { className: "ghsp-list", style: { padding: "6px" } }, items.map(panelRow));
             }
-            return React.createElement(Lanes, { items: pickRecentPrs(items, 20), mode: "feature", rowFn: panelRow });
+            return React.createElement(Lanes, {
+              items: pickRecentPrs(items, panelVisible),
+              mode: "feature",
+              rowFn: panelRow,
+              onLoadMore: function () { setPanelVisible(function (v: number) { return v + 20; }); },
+            });
           })()
     );
   }

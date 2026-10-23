@@ -53,4 +53,9 @@ export declare function saveCollapsedLanes(list: string[]): void;
  * 持折叠状态的泳道组件。浮窗与面板都用它，
  * 所以「在浮窗里收起 Test，面板里 Test 也是收起的」。
  */
+/**
+ * 是否已经滑到"该加载更多"的位置（纯函数，可单测）。
+ * 阈值给 48px：留一点提前量，用户不会撞到底才看见新内容。
+ */
+export declare function shouldLoadMore(scrollTop: number, clientHeight: number, scrollHeight: number, threshold?: number): boolean;
 export declare function Lanes(props: any): any;

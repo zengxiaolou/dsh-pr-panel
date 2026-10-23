@@ -398,10 +398,18 @@ export function laneList(items: any[], mode: string, rowFn: (item: any) => any, 
   var opts = options || {};
   var collapsedList: string[] = Array.isArray(opts.collapsed) ? opts.collapsed : [];
   var onToggle = typeof opts.onToggle === "function" ? opts.onToggle : null;
+  var onLoadMore = typeof opts.onLoadMore === "function" ? opts.onLoadMore : null;
 
   return React.createElement(
     "div",
-    { className: "ghsp-lanes" },
+    {
+      className: "ghsp-lanes",
+      onScroll: onLoadMore ? function (ev: any) {
+        var el = ev && ev.currentTarget;
+        if (!el) return;
+        if (shouldLoadMore(el.scrollTop, el.clientHeight, el.scrollHeight)) onLoadMore();
+      } : undefined,
+    },
     buildLanes(items, mode).map(function (lane: any) {
       var isCollapsed = collapsedList.indexOf(lane.key) >= 0;
       var headInner = [
@@ -456,6 +464,18 @@ export function saveCollapsedLanes(list: string[]) {
  * 持折叠状态的泳道组件。浮窗与面板都用它，
  * 所以「在浮窗里收起 Test，面板里 Test 也是收起的」。
  */
+/**
+ * 是否已经滑到"该加载更多"的位置（纯函数，可单测）。
+ * 阈值给 48px：留一点提前量，用户不会撞到底才看见新内容。
+ */
+export function shouldLoadMore(scrollTop: number, clientHeight: number, scrollHeight: number, threshold: number = 48): boolean {
+  var st = Number(scrollTop) || 0;
+  var ch = Number(clientHeight) || 0;
+  var sh = Number(scrollHeight) || 0;
+  if (sh <= ch) return false; // 没得滚，别触发
+  return st + ch >= sh - Math.max(0, Number(threshold) || 0);
+}
+
 export function Lanes(props: any) {
   var [collapsed, setCollapsed] = React.useState(loadCollapsedLanes);
 
@@ -467,5 +487,9 @@ export function Lanes(props: any) {
     setCollapsed(next);
   };
 
-  return laneList(props.items, props.mode, props.rowFn, { collapsed: collapsed, onToggle: toggle });
+  return laneList(props.items, props.mode, props.rowFn, {
+    collapsed: collapsed,
+    onToggle: toggle,
+    onLoadMore: props.onLoadMore,
+  });
 }
