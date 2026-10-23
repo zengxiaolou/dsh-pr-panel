@@ -495,6 +495,8 @@ interface SessionPrStore {
   at: number;
   /** 只用于判断"内容真的变了没有"：不变就不触发重渲染，避免大 diff 每 8 秒重排一次 */
   signature: string;
+  /** 窗口前的全量 PR 数：大于 items.length 时说明被 limit 截断，需要给用户提示 */
+  refsTotal?: number;
 }
 
 var openPanelCount = 0;
@@ -555,9 +557,23 @@ function loadSessionPrs(sid: string, force: boolean) {
         if (sig === prStore.signature) {
           // 内容没变：items 保持同一引用（不触发 diff 重算），但时间戳要通知出去，
           // 否则「刚刚/Ns」永远停在旧值，用户会以为刷新没生效。
-          publishPrStore(Object.assign({}, prStore, { loading: false, error: null, at: Date.now() }));
+          publishPrStore(Object.assign({}, prStore, {
+            loading: false,
+            error: null,
+            at: Date.now(),
+            refsTotal: Number((json.data && json.data.refsTotal) || items.length) || items.length,
+          }));
         } else {
-          publishPrStore({ sid: sid, items: items, loading: false, error: null, at: Date.now(), signature: sig });
+          publishPrStore({
+            sid: sid,
+            items: items,
+            loading: false,
+            error: null,
+            at: Date.now(),
+            signature: sig,
+            // 全量计数（items 可能被 limit 截断），供头部提示
+            refsTotal: Number((json.data && json.data.refsTotal) || items.length) || items.length,
+          });
         }
       } else {
         prFailStreak += 1;
@@ -1554,6 +1570,12 @@ function SessionPrOverlayInner(props: any) {
 
   var headline = items[0];
   var total = items.length;
+  // Host 会在 items 之外给出窗口前的全量；两者不等时说明有 PR 被 limit 截断，
+  // 必须让用户看见（否则"已合并的 PR 不见了"会被误读成"没提过"）。
+  var refsTotal = Number((state as any).refsTotal) || total;
+  var truncatedHint = refsTotal > total
+    ? "共 " + refsTotal + " 个，当前显示 " + total + " 个"
+    : null;
 
   // 首帧 lite 只回了编号：这时按阶段切段会先冒出假的 Other 段，先平铺
   var pendingOnly = items.every(function (it: any) { return it.pending; });
@@ -1626,6 +1648,9 @@ function SessionPrOverlayInner(props: any) {
         React.createElement("span", { className: "ghsp-pill-text" }, "PR"),
         React.createElement("span", { className: "ghsp-pill-delta" }, "#" + headline.number),
         total > 1 ? React.createElement("span", { className: "ghsp-pill-count" }, String(total)) : null,
+        truncatedHint
+          ? React.createElement("span", { className: "ghsp-pill-count", title: truncatedHint }, "…")
+          : null,
         React.createElement(
           "svg",
           { width: 10, height: 10, viewBox: "0 0 12 12", "aria-hidden": "true" },
