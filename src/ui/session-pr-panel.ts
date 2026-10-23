@@ -30,6 +30,7 @@ export const SESSION_PR_CSS = `
 .ghsp-pill-text{font-weight:500;letter-spacing:.01em}
 .ghsp-pill-delta{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .ghsp-pill-count{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:var(--dsw-alias-brand-primary);color:#fff;font-size:10px;font-weight:600;line-height:1}
+.ghsp-pill-empty{font-size:11px;color:var(--dsw-alias-label-tertiary)}
 
 .ghsp-card{width:372px;max-height:min(56vh,470px);display:flex;flex-direction:column;border-radius:12px;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-specific-menu,color-mix(in srgb, var(--dsw-alias-bg-base) 94%, #000 6%));backdrop-filter:var(--dsw-menu-backdrop-filter,blur(14px) saturate(1.35));-webkit-backdrop-filter:var(--dsw-menu-backdrop-filter,blur(14px) saturate(1.35));box-shadow:0 18px 44px rgba(0,0,0,.34);overflow:hidden}
 .ghsp-card-head{display:flex;align-items:center;gap:8px;padding:9px 10px 9px 12px;border-bottom:1px solid var(--dsw-alias-border-l2)}
@@ -1337,7 +1338,7 @@ function ActionsBlock(props: any) {
     return function () { alive = false; };
   }, [pairs.map(function (p: any) { return p.repo + '#' + p.branch + '#' + p.base + '#' + p.mergedAt; }).join('|')]);
 
-  if (!items.length) return React.createElement("div", { className: "ghsp-empty2" }, "本会话还没有提交 PR");
+  if (!items.length) return React.createElement("div", { className: "ghsp-empty2" }, "本会话还没有提交 PR；可以先看「项目」里的 worktree");
   if (state.loading) return React.createElement("div", { className: "ghsp-empty2" }, "读取中…");
   var notice = state.error && state.groups.length ? state.error : null;
   if (state.error && !state.groups.length) return React.createElement("div", { className: "ghsp-empty2" }, state.error);
@@ -1615,7 +1616,12 @@ function SessionPrOverlayInner(props: any) {
   var items = state.items || [];
   // 面板已经打开时不再悬浮：它盖住的就是刚打开的那一栏
   if (openPanelCount > 0) return null;
-  if (!sessionId || items.length === 0) return null;
+  // 只在两个确实没法用的情况下隐藏：
+  //   1) 拿不到当前会话（没有它连 cwd 都没有）
+  //   2) 右列 PR 面板已经打开（同屏不重复展示）
+  // 没有 PR 也照常显示入口——「项目」与「CI/CD」两个视图不依赖 PR 数据，
+  // 而且用户需要知道这个插件在、入口在哪。
+  if (!sessionId) return null;
 
   var headline = items[0];
   var total = items.length;
@@ -1628,6 +1634,10 @@ function SessionPrOverlayInner(props: any) {
 
   // 首帧 lite 只回了编号：这时按阶段切段会先冒出假的 Other 段，先平铺
   var recentItems = pickRecentPrs(items, visiblePrs);
+  // 没有 PR 时默认打开「项目」：它是唯一在无 PR 情况下仍然有内容的视图
+  React.useEffect(function () {
+    if (items.length === 0 && overlayTab === "pr" && !state.loading) setOverlayTab("project");
+  }, [items.length, state.loading]);
   var selKey = selIdx >= 0 && selIdx < recentItems.length ? prStateKey(recentItems[selIdx]) : "";
 
   React.useEffect(function () {
@@ -1747,7 +1757,9 @@ function SessionPrOverlayInner(props: any) {
         },
         renderOctocat(13, "currentColor"),
         React.createElement("span", { className: "ghsp-pill-text" }, "PR"),
-        React.createElement("span", { className: "ghsp-pill-delta" }, "#" + headline.number),
+        total > 0
+          ? React.createElement("span", { className: "ghsp-pill-delta" }, "#" + headline.number)
+          : React.createElement("span", { className: "ghsp-pill-empty" }, "本会话暂无"),
         total > 1 ? React.createElement("span", { className: "ghsp-pill-count" }, String(total)) : null,
         truncatedHint
           ? React.createElement("span", { className: "ghsp-pill-count", title: truncatedHint }, "…")
