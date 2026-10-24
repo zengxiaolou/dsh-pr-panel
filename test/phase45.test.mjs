@@ -437,6 +437,21 @@ eq(mergePrPages([], pageA).length, 2, '空首页也能合并');
 eq(mergePrPages(pageA, []).length, 2, '空下一页不丢数据');
 eq(mergePrPages(null, null).length, 0, 'null 不炸');
 
+console.log('\n--- 4.22 排序偏好可切换（环境 / 编号） ---');
+const { getLaneSort, setLaneSort } = await import('../lib/ui/pr-lanes.js');
+const mkS2 = (n, base, head) => ({ number: n, headRefName: head, baseRefName: base, state: 'MERGED', checks: { state: 'pass', total: 1, failing: 0 } });
+const items2 = [
+  mkS2(1, 'development', 'fix/vcc-phone-dev'),
+  mkS2(2, 'test', 'fix/vcc-phone-test'),
+  mkS2(3, 'release_v1.0.80', 'fix/vcc-phone-release'),
+];
+setLaneSort({ env: 'desc' });
+eq(lanes.buildLanes(items2, 'feature')[0].items.map((i) => i.baseRefName).join(','), 'release_v1.0.80,test,development', '默认环境倒序（Release 在上）');
+setLaneSort({ env: 'asc' });
+eq(lanes.buildLanes(items2, 'feature')[0].items.map((i) => i.baseRefName).join(','), 'development,test,release_v1.0.80', '切成正序（Dev 在上）');
+setLaneSort({ env: 'desc' });
+eq(getLaneSort().env, 'desc', '偏好可读回');
+
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
 console.log('\n--- 4.12 CI/CD tab：本会话 PR 的 Actions（PR 校验 + 合并后） ---');
@@ -462,6 +477,8 @@ ok(client.includes('未解决的发到对话框'), '未解决的可一并发到�
 ok(client.includes('var mainSlots'), '主列卡片走权重排序');
 ok(client.includes('key: "changes", weight: 700'), 'diff 沉底');
 ok(client.includes('checksFailing ? 5 : 900'), '检查失败时上浮');
+ok(client.includes('ghsp-sortbtn'), '浮窗有排序切换按钮');
+ok(client.includes('setLaneSort'), '按钮调用持久化偏好');
 ok(client.includes('isOverlayPosVisible'), '挂载时做自愈');
 ok(client.includes('"resize"'), '窗口尺寸变化也重新校正');
 ok(client.includes('&offset='), '追加请求带 offset 游标');

@@ -366,6 +366,28 @@ export function stageRankOf(item: any): number {
   return 0;
 }
 
+
+/** 排序偏好（本地持久化）：环境方向、编号方向 */
+const LANE_SORT_KEY = "dsh-pr-panel:lane-sort";
+export type LaneSort = { env: "desc" | "asc"; num: "desc" | "asc" };
+var laneSort: LaneSort = { env: "desc", num: "desc" };
+
+export function getLaneSort(): LaneSort {
+  try {
+    var raw = localStorage.getItem(LANE_SORT_KEY);
+    if (!raw) return laneSort;
+    var v = JSON.parse(raw);
+    if (v && (v.env === "asc" || v.env === "desc")) laneSort = { env: v.env, num: v.num === "asc" ? "asc" : "desc" };
+  } catch (e) { /* 坏数据用默认 */ }
+  return laneSort;
+}
+
+export function setLaneSort(next: Partial<LaneSort>): LaneSort {
+  laneSort = { env: next.env || laneSort.env, num: next.num || laneSort.num };
+  try { localStorage.setItem(LANE_SORT_KEY, JSON.stringify(laneSort)); } catch (e) { /* 忽略 */ }
+  return laneSort;
+}
+
 const prAttentionOf = prAttention;
 
 export function buildLanes(items: any[], mode: string) {
@@ -389,13 +411,18 @@ export function buildLanes(items: any[], mode: string) {
           + (g.items.length > 1 ? "\n同一版本/变更集在各分支上的 PR 收在此组" : ""),
         items: g.items.slice().sort(function (a: any, b: any) {
           // 1) 目标环境：Release → Test → Dev（越靠近发布越靠上）
-          var byStage = stageRankOf(b) - stageRankOf(a);
+          var sort = getLaneSort();
+          var byStage = sort.env === "asc"
+            ? stageRankOf(a) - stageRankOf(b)
+            : stageRankOf(b) - stageRankOf(a);
           if (byStage !== 0) return byStage;
           // 2) 同环境里，需要我动的在前
           var byAttn = prAttentionOf(b) - prAttentionOf(a);
           if (byAttn !== 0) return byAttn;
           // 3) 最后按编号倒序（新的在上），保证顺序稳定可预期
-          return (Number(b && b.number) || 0) - (Number(a && a.number) || 0);
+          var na = Number(a && a.number) || 0;
+          var nb = Number(b && b.number) || 0;
+          return getLaneSort().num === "asc" ? na - nb : nb - na;
         }),
       };
     });

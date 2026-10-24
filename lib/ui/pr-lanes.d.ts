@@ -42,6 +42,12 @@ export declare function prAttention(item: any): number;
  * 已经到 Release 的排最上面，一眼看出最远的那一版；Dev 垫底。
  */
 export declare function stageRankOf(item: any): number;
+export type LaneSort = {
+    env: "desc" | "asc";
+    num: "desc" | "asc";
+};
+export declare function getLaneSort(): LaneSort;
+export declare function setLaneSort(next: Partial<LaneSort>): LaneSort;
 export declare function buildLanes(items: any[], mode: string): {
     key: string;
     id: any;

@@ -16,7 +16,7 @@ declare function formatRelativeTime(iso: any): string;
  *    diff 复用它已经拉好的 unified patch。
  */
 
-import { Lanes, prAttention as prAttentionOf } from './pr-lanes.js';
+import { Lanes, prAttention as prAttentionOf, getLaneSort, setLaneSort } from './pr-lanes.js';
 import { runConclusionBadge, formatDurationMs } from './utils.js';
 
 export const SESSION_PR_CSS = `
@@ -120,6 +120,8 @@ export const SESSION_PR_CSS = `
 .ghsp-attn{flex:0 0 auto;font-size:9px;line-height:14px;padding:0 4px;border-radius:4px;border:1px solid currentColor}
 .ghsp-attn.todo{color:var(--dsw-alias-state-warn-primary,#d29922)}
 .ghsp-attn.blocker{color:var(--dsw-alias-state-danger-primary,#f85149)}
+.ghsp-sortbtn{margin-left:auto;margin-right:8px;font-size:10px;padding:2px 8px;border-radius:999px;border:1px solid var(--dsw-alias-border-l2);background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer;align-self:center}
+.ghsp-sortbtn:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-brand-primary,#2f81f7)}
 .ghsp-row.sel{background:var(--dsw-alias-bg-layer-2);box-shadow:inset 2px 0 0 var(--dsw-alias-brand-primary,#2f81f7)}
 .ghsp-note-warn{margin:0 0 2px;padding:5px 7px;border-radius:6px;font-size:10px;color:var(--dsw-alias-state-warn-primary,#9a6700);background:color-mix(in srgb, var(--dsw-alias-state-warn-primary,#9a6700) 12%, transparent);border:1px solid color-mix(in srgb, var(--dsw-alias-state-warn-primary,#9a6700) 35%, transparent)}
 .ghsp-run-phase{display:inline-block;margin-right:4px;padding:0 3px;border-radius:3px;font-size:8px;border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary)}
@@ -1521,6 +1523,7 @@ function SessionPrOverlayInner(props: any) {
   var [overlayTab, setOverlayTab] = React.useState("pr");
   // 「功能」列表先给 20 条，滑到底部再续 20 条（不做假分页：数据早就在内存里）
   var [visiblePrs, setVisiblePrs] = React.useState(20);
+  var [sortState, setSortState] = React.useState(function () { return getLaneSort(); });
   // 键盘导航：j/k 选行、Enter 打开、1/2/3 切 tab、Esc 收起（借鉴 gh-dash / octobox）
   var [selIdx, setSelIdx] = React.useState(-1);
   // 右键菜单：{x, y, item}；同时用一个短 toast 反馈「已复制」
@@ -1938,6 +1941,17 @@ function SessionPrOverlayInner(props: any) {
       ),
       // tab：功能 / 项目 / CI/CD，一次只渲染一块（不做隐藏渲染，省掉另外两次请求）
       overlayTabBar(overlayTab, setOverlayTab, total),
+      overlayTab === "pr"
+        ? React.createElement("button", {
+            type: "button",
+            className: "ghsp-sortbtn",
+            title: "切换泳道内环境顺序：" + (sortState.env === "desc" ? "当前 Release→Dev（点击改 Dev→Release）" : "当前 Dev→Release（点击改 Release→Dev）"),
+            onClick: function () {
+              var next = setLaneSort({ env: sortState.env === "desc" ? "asc" : "desc" });
+              setSortState(next);
+            },
+          }, sortState.env === "desc" ? "↓ 环境" : "↑ 环境")
+        : null,
       overlayTab === "pr" && state.hasMore
         ? React.createElement("div", { className: "ghsp-empty2" }, "已显示 " + total + " / " + (state.refsTotal || total) + " 条，继续下滑加载更多")
         : null,
