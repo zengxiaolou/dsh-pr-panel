@@ -83,6 +83,14 @@ export declare function cardPlacementFor(pos: {
     maxHeight: number;
 };
 export declare function SessionPrOverlay(props: any): any;
+/**
+ * 存下来的浮窗位置是否还看得见。
+ *
+ * 为什么需要：位置是跨会话持久化的，换窗口大小、换屏幕、折叠侧栏后，
+ * 旧的 left/top 可能整体落在视口外 —— 组件挂载着、状态也正常，但屏幕上什么都没有。
+ * 判据：胶囊左上角必须在视口内，且至少留 60px 让用户抓得到。
+ */
+export declare function isOverlayPosVisible(pos: any, vw: number, vh: number): boolean;
 export declare function SessionPrPanel(props: any): any;
 /**
  * 是否装了我们自己的长文本胶囊插件（dsh-paste-chip）。

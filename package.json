@@ -1,6 +1,6 @@
 {
   "name": "dsh-pr-panel",
-  "version": "0.6.40",
+  "version": "0.6.41",
   "icon": "icon.svg",
   "description": "本会话 PR 浮窗 + 右列审阅面板：把 DeepSeek Harness 里刚提的 PR 常驻在界面上，一眼看到 CI、评审意见与合并状态。",
   "type": "module",

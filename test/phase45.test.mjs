@@ -418,6 +418,15 @@ const envOrdered = lanes.buildLanes([
 eq(envOrdered.length, 1, '四条同功能分支收成一条泳道');
 eq(envOrdered[0].items.map((i) => i.baseRefName).join(','), 'main,release_v1.0.80,test,development', '泳道内顺序：Prod → Release → Test → Dev');
 
+console.log('\n--- 4.21 浮窗位置自愈 ---');
+const { isOverlayPosVisible } = await import('../lib/ui/session-pr-panel.js');
+ok(isOverlayPosVisible(null, 1440, 900), '没有存位置视为正常（走默认角落）');
+ok(isOverlayPosVisible({ x: 1000, y: 600 }, 1440, 900), '视口内算可见');
+ok(!isOverlayPosVisible({ x: 3000, y: 600 }, 1440, 900), 'right 越界不可见');
+ok(!isOverlayPosVisible({ x: 100, y: 2000 }, 1440, 900), 'bottom 越界不可见');
+ok(!isOverlayPosVisible({ x: -400, y: 100 }, 1440, 900), '跑到左边外面不可见');
+ok(!isOverlayPosVisible({ x: NaN, y: 1 }, 1440, 900), '非法坐标不可见');
+
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
 console.log('\n--- 4.12 CI/CD tab：本会话 PR 的 Actions（PR 校验 + 合并后） ---');
@@ -443,6 +452,8 @@ ok(client.includes('未解决的发到对话框'), '未解决的可一并发到�
 ok(client.includes('var mainSlots'), '主列卡片走权重排序');
 ok(client.includes('key: "changes", weight: 700'), 'diff 沉底');
 ok(client.includes('checksFailing ? 5 : 900'), '检查失败时上浮');
+ok(client.includes('isOverlayPosVisible'), '挂载时做自愈');
+ok(client.includes('"resize"'), '窗口尺寸变化也重新校正');
 const routesTh = fs.readFileSync(path.join(dirname, '../lib/api/routes-actions.js'), 'utf8');
 ok(routesTh.includes('/api/github/resolve-thread'), '路由已注册 resolve-thread');
 ok(routesTh.includes('resolveReviewThread'), '用 GitHub 的 resolveReviewThread mutation');
