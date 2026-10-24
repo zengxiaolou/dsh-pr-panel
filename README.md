@@ -2,6 +2,14 @@
 
 ![dsh-pr-panel](https://raw.githubusercontent.com/zengxiaolou/dsh-pr-panel/main/docs/images/promo.png)
 
+<p>
+<a href="https://www.npmjs.com/package/dsh-pr-panel"><img alt="npm" src="https://img.shields.io/npm/v/dsh-pr-panel?color=2f81f7&label=npm"></a>
+<a href="https://www.npmjs.com/package/dsh-pr-panel"><img alt="downloads" src="https://img.shields.io/npm/dw/dsh-pr-panel?color=3fb950"></a>
+<a href="https://github.com/zengxiaolou/dsh-pr-panel/blob/main/LICENSE"><img alt="license" src="https://img.shields.io/npm/l/dsh-pr-panel?color=bf8700"></a>
+<img alt="dsh plugin" src="https://img.shields.io/badge/DSH-plugin-7aa2ff">
+<a href="https://github.com/zengxiaolou/dsh-pr-panel/stargazers"><img alt="stars" src="https://img.shields.io/github/stars/zengxiaolou/dsh-pr-panel?color=8250df"></a>
+</p>
+
 
 **本会话 PR 浮窗 + 右列审阅面板。** Agent 说「PR 已创建」之后，你不用切浏览器：右下角留一个入口，点开就是状态、CI、评审意见与合并按钮。
 
