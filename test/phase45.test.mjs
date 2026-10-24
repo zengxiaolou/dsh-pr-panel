@@ -440,6 +440,9 @@ ok(client.includes('未解决的评审讨论'), '面板有未解决讨论卡片'
 ok(client.includes('/api/github/resolve-thread'), '走 resolve-thread 接口');
 ok(client.includes('全部解决 '), '支持一键解决全部未解决');
 ok(client.includes('未解决的发到对话框'), '未解决的可一并发到对话框');
+ok(client.includes('var mainSlots'), '主列卡片走权重排序');
+ok(client.includes('key: "changes", weight: 700'), 'diff 沉底');
+ok(client.includes('checksFailing ? 5 : 900'), '检查失败时上浮');
 const routesTh = fs.readFileSync(path.join(dirname, '../lib/api/routes-actions.js'), 'utf8');
 ok(routesTh.includes('/api/github/resolve-thread'), '路由已注册 resolve-thread');
 ok(routesTh.includes('resolveReviewThread'), '用 GitHub 的 resolveReviewThread mutation');

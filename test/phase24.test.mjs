@@ -657,11 +657,12 @@ async function runTests() {
       /className:\s*"ghsp-cols"\s*\}\s*,\s*React\.createElement\("main",\s*\{\s*className:\s*"ghsp-col-main"/.test(panelSrc),
       'ghsp-cols 必须直接包含 main.ghsp-col-main',
     );
-    // v4 起侧栏承载的是三张卡片（检查/评审/操作），卡片由 cardBlock() 统一包壳
+    // 检查卡现在按状态动态落位：正常在右侧（sideChecksCard），失败时上浮到主列
     assert(
-      /className:\s*"ghsp-col-side"\s*\}[\s\S]{0,200}checksCard/.test(panelSrc),
-      '侧栏必须承载 checksCard（检查/评审/操作区）',
+      /className:\s*"ghsp-col-side"\s*\}[\s\S]{0,200}sideChecksCard/.test(panelSrc),
+      '侧栏承载非失败态的检查卡（sideChecksCard）',
     );
+    assert(panelSrc.includes('var sideChecksCard = checksFailing ? null : checksCard'), '检查失败时检查卡上浮主列');
     assert(panelSrc.includes('ghsp-card-block'), 'v4 的每个分区都必须包在卡片壳里');
   });
 

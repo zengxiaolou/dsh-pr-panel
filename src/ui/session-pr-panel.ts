@@ -3433,6 +3433,25 @@ function SessionPrPanelBody(props: any) {
       }, "修复失败项 " + failedList.length)
     : null;
   var checksCard = cardBlock("checks", "检查", String(checks.length), checksActions, checksBody, false);
+  /* ---- 动态布局：有问题的上浮，无问题的下沉，diff 永远最后 ---- */
+  var checksFailing = (checks || []).some(function (c: any) { return String(c.conclusion || c.state || "").toLowerCase() === "failure"; });
+  var hasChangesRequested = requests.some(function (r: any) { return String(r.state || "").toUpperCase() === "CHANGES_REQUESTED"; });
+  var mainSlots = [
+    // 权重越小越靠上；900 段是「没问题的」，按阅读顺序固定
+    { key: "checks", weight: checksFailing ? 5 : 900, node: checksCard },
+    { key: "threads", weight: unresolved.length ? 10 : 901, node: threadsCard },
+    { key: "requests", weight: requests.length ? (hasChangesRequested ? 20 : 30) : 902, node: requestsCard },
+    { key: "desc", weight: 300, node: descriptionCard },
+    { key: "discuss", weight: 400, node: discussionCard },
+    { key: "changes", weight: 700, node: changesCard }, // diff 体积大、问题少，放最后
+  ];
+  var mainCards = mainSlots
+    .filter(function (x: any) { return Boolean(x.node); })
+    .sort(function (a: any, b: any) { return a.weight - b.weight; })
+    .map(function (x: any) { return x.node; });
+  // 检查卡没失败时留在右列（它稳定、不需要每屏看）
+  var sideChecksCard = checksFailing ? null : checksCard;
+
 
   /* ---- 卡片：评审 ---- */
   var reviewers: any[] = [];
@@ -3582,9 +3601,9 @@ function SessionPrPanelBody(props: any) {
             React.createElement("button", { type: "button", className: "ghsp-btn", onClick: function () { setReloadTick(function (n: number) { return n + 1; }); setDetailTick(function (n: number) { return n + 1; }); } }, "重试"),
             React.createElement("button", { type: "button", className: "ghsp-btn", onClick: function () { if (selectedRepo) openUrl("https://github.com/" + selectedRepo + "/pull/" + selected); } }, "在 GitHub 打开")))
       : React.createElement("div", { className: "ghsp-cols" },
-          React.createElement("main", { className: "ghsp-col-main" }, descriptionCard, changesCard, discussionCard, threadsCard, requestsCard),
+          React.createElement("main", { className: "ghsp-col-main" }, mainCards),
           React.createElement("aside", { className: "ghsp-col-side" },
-            headerSkeleton ? null : checksCard,
+            headerSkeleton ? null : sideChecksCard,
             headerSkeleton ? null : reviewersCard,
             actionsCard)),
     notice ? React.createElement("div", { className: "ghsp-toast " + notice.tone }, notice.text) : null,
