@@ -2552,6 +2552,7 @@ function SessionPrPanelBody(props: any) {
         reviews: thread.data.reviews || detail.pr.reviews || [],
         comments: thread.data.comments || detail.pr.comments || [],
         commits: thread.data.commits || detail.pr.commits || [],
+        reviewThreads: thread.data.reviewThreads || detail.pr.reviewThreads || [],
       } : {})
     : null;
   var diffState = usePrDiff(selectedRepo, selected, reloadTick, wantDiff);
@@ -3295,7 +3296,104 @@ function SessionPrPanelBody(props: any) {
           ? React.createElement("button", { type: "button", className: "ghsp-btn ghsp-btn-sm", onClick: function () { setRequestsExpanded(!requestsExpanded); } }, requestsExpanded ? "收起" : "显示全部 " + requests.length + " 条")
           : null);
 
+  /* ---- 未解决的 review thread：分支保护要求全部 resolve 才能合并 ---- */
+  var threads: any[] = Array.isArray(pr && pr.reviewThreads) ? pr.reviewThreads : [];
+  var unresolved = threads.filter(function (t: any) { return t && t.isResolved === false; });
+  var resolving = busy === "resolve";
+  var resolveOne = function (id: string) {
+    if (!id || resolving) return;
+    setBusy("resolve");
+    postJson("/api/github/resolve-thread", { threadId: id })
+      .then(function (json: any) {
+        if (json && json.ok) {
+          flash("ok", "已标记解决");
+          setThreadTick(function (n: number) { return n + 1; });
+        } else flash("error", (json && (json.error || json.message)) || "解决失败");
+      })
+      .catch(function (err: any) { flash("error", String((err && err.message) || err)); })
+      .then(function () { setBusy(null); });
+  };
+  var resolveAllUnresolved = function () {
+    if (!unresolved.length || resolving) return;
+    if (typeof window !== "undefined" && window.confirm && !window.confirm("把 " + unresolved.length + " 条未解决的评审讨论标记为已解决？")) return;
+    setBusy("resolve");
+    // 串行 resolve：并行容易撞 GitHub 的 mutation 限流
+    var failed = 0;
+    var step = function (i: number) {
+      if (i >= unresolved.length) {
+        flash(failed ? "error" : "ok", failed ? (unresolved.length - failed) + " 条已解决，" + failed + " 条失败" : "已全部标记解决（" + unresolved.length + " 条）");
+        setBusy(null);
+        setThreadTick(function (n: number) { return n + 1; });
+        return;
+      }
+      postJson("/api/github/resolve-thread", { threadId: unresolved[i].id })
+        .then(function (json: any) { if (!json || !json.ok) failed += 1; })
+        .catch(function () { failed += 1; })
+        .then(function () { step(i + 1); });
+    };
+    step(0);
+  };
+
+  var threadsActions = unresolved.length
+    ? React.createElement("button", {
+        type: "button",
+        className: "ghsp-btn ghsp-btn-sm",
+        disabled: resolving,
+        title: "全部分支保护要求 review thread 全部 resolve 才能合并；这条会逐条调用 GitHub 的 resolveReviewThread",
+        onClick: resolveAllUnresolved,
+      }, resolving ? "解决中…" : "全部解决 " + unresolved.length)
+    : null;
+
+  var threadsBody = unresolved.length === 0
+    ? React.createElement("div", { className: "ghsp-muted" }, threads.length ? "评审讨论都已解决" : "没有评审讨论")
+    : React.createElement("div", null,
+        unresolved.slice(0, 6).map(function (t: any) {
+          var first = (t.comments && t.comments[0]) || {};
+          var author = (first.author && first.author.login) || "";
+          var body = String(first.body || "").trim();
+          return React.createElement("div", { key: t.id, className: "ghsp-request" },
+            React.createElement("div", { className: "ghsp-note-head" },
+              React.createElement(Avatar, { login: author, url: first.author && first.author.avatarUrl, size: 13 }),
+              React.createElement("span", { className: "ghsp-note-author" }, "@" + (author || "?")),
+              t.path ? React.createElement("span", { className: "ghsp-note-time", title: t.path }, String(t.path).split("/").pop() + (t.line ? ":" + t.line : "")) : null,
+              React.createElement("button", {
+                type: "button",
+                className: "ghsp-btn ghsp-btn-sm",
+                title: "在 GitHub 上标记这条讨论为已解决",
+                onClick: function () { resolveOne(t.id); },
+              }, "解决"),
+              React.createElement("button", {
+                type: "button",
+                className: "ghsp-btn ghsp-btn-sm ghsp-fix-btn",
+                title: "把这条未解决的讨论推给 Agent 处理",
+                onClick: function () { pushToComposer("评审讨论未解决（" + (t.path || "PR") + (t.line ? ":" + t.line : "") + "）：\n\n@" + author + " 的意见：\n" + body.slice(0, 2000) + "\n\n请先判断这条意见是否已经处理；已处理就说明依据，未处理就改完并回复，然后 resolve 这条 thread。"); },
+              }, "fix")),
+            body ? React.createElement("div", { className: "ghsp-md ghsp-clamp" }, renderMarkdownLite(React.createElement, body)) : null);
+        }),
+        unresolved.length > 6
+          ? React.createElement("div", { className: "ghsp-muted" }, "另有 " + (unresolved.length - 6) + " 条未解决")
+          : null,
+        React.createElement("button", {
+          type: "button",
+          className: "ghsp-btn ghsp-btn-sm",
+          title: "把全部未解决的讨论一次性推进对话框",
+          onClick: function () {
+            var lines = ["下面 " + unresolved.length + " 条评审讨论还没有 resolve（分支保护要求全部解决才能合并）：", ""];
+            unresolved.forEach(function (t: any, i: number) {
+              var first = (t.comments && t.comments[0]) || {};
+              lines.push("### " + (i + 1) + ") " + (t.path || "PR") + (t.line ? ":" + t.line : "") + " · @" + ((first.author && first.author.login) || "?"));
+              lines.push(String(first.body || "").slice(0, 3000));
+              lines.push("");
+            });
+            lines.push("请逐条判断是否已处理：已处理的给出依据并 resolve，未处理的改完后回复并 resolve。完成后用 gh api 确认没有未解决线程。");
+            pushToComposer(lines.join("\n"));
+          },
+        }, "未解决的发到对话框"));
+
+  var threadsCard = cardBlock("threads", "未解决的评审讨论", String(unresolved.length), threadsActions, threadsBody, false);
+
   var requestsCard = cardBlock("requests", "待修改意见", String(requests.length), requestsActions, requestsBody, false);
+  var threadsCardNode = threadsCard;
 
   /* ---- 卡片：检查 ---- */
   var failedChecks = checks.filter(function (c: any) { return checkState(c).tone === "fail"; }).length;
@@ -3484,7 +3582,7 @@ function SessionPrPanelBody(props: any) {
             React.createElement("button", { type: "button", className: "ghsp-btn", onClick: function () { setReloadTick(function (n: number) { return n + 1; }); setDetailTick(function (n: number) { return n + 1; }); } }, "重试"),
             React.createElement("button", { type: "button", className: "ghsp-btn", onClick: function () { if (selectedRepo) openUrl("https://github.com/" + selectedRepo + "/pull/" + selected); } }, "在 GitHub 打开")))
       : React.createElement("div", { className: "ghsp-cols" },
-          React.createElement("main", { className: "ghsp-col-main" }, descriptionCard, changesCard, discussionCard, requestsCard),
+          React.createElement("main", { className: "ghsp-col-main" }, descriptionCard, changesCard, discussionCard, threadsCard, requestsCard),
           React.createElement("aside", { className: "ghsp-col-side" },
             headerSkeleton ? null : checksCard,
             headerSkeleton ? null : reviewersCard,

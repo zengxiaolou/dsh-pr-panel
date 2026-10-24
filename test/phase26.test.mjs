@@ -290,19 +290,20 @@ async function runTests() {
   // ============================================================
   console.log('\n--- 6. 主列顺序：讨论之后才是待修改意见 ---');
 
-  test('main 列按 description → changes → discussion → requests 渲染', () => {
+  test('main 列按 description → changes → discussion → threads → requests 渲染', () => {
+    // 未解决的评审讨论卡片插在讨论与待修改意见之间：它是合并门禁，必须显眼
     assert(
-      panelSrc.includes('descriptionCard, changesCard, discussionCard, requestsCard'),
-      '主列必须严格是 `... discussionCard, requestsCard` 的顺序',
+      panelSrc.includes('descriptionCard, changesCard, discussionCard, threadsCard, requestsCard'),
+      '主列顺序必须是 `... discussionCard, threadsCard, requestsCard`',
     );
     assert(
       panelSrc.includes('className: "ghsp-col-main"'),
       'requestsCard 必须挂在主列（ghsp-col-main）里，不能掉到右列',
     );
     // 顺序反了就是「先看见待办、后看见讨论」，但按钮全都能点，只有肉眼能发现
-    const discussionIdx = panelSrc.indexOf('descriptionCard, changesCard, discussionCard, requestsCard');
+    const discussionIdx = panelSrc.indexOf('descriptionCard, changesCard, discussionCard, threadsCard, requestsCard');
     const mainIdx = panelSrc.indexOf('className: "ghsp-col-main"');
-    assert(mainIdx >= 0 && discussionIdx > mainIdx, '四张卡片必须在 main 列容器之后出现');
+    assert(mainIdx >= 0 && discussionIdx > mainIdx, '五张卡片必须在 main 列容器之后出现');
   });
 
   // ============================================================
