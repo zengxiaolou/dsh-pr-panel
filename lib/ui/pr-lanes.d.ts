@@ -35,6 +35,13 @@ export declare function featureLabelOf(key: string): string;
  * 只用已经拿到的字段，不额外发请求；Host 与客户端共用这一份口径。
  */
 export declare function prAttention(item: any): number;
+/**
+ * 目标环境的推进顺序：Prod > Release > Test > Dev > 其他。
+ *
+ * 为什么不是"开发在前"：读列表的人关心的是"这个功能走到哪了"，
+ * 已经到 Release 的排最上面，一眼看出最远的那一版；Dev 垫底。
+ */
+export declare function stageRankOf(item: any): number;
 export declare function buildLanes(items: any[], mode: string): {
     key: string;
     id: any;

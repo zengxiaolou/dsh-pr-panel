@@ -1643,6 +1643,7 @@ function SessionPrOverlayInner(props: any) {
 
   React.useEffect(function () {
     if (!open || pendingOnly) return;
+    if (typeof window === "undefined" || !window.addEventListener) return;
     var onKey = function (ev: any) {
       if (!ev || ev.metaKey || ev.ctrlKey || ev.altKey) return;
       var tag = String((ev.target && ev.target.tagName) || "").toLowerCase();
@@ -1692,7 +1693,7 @@ function SessionPrOverlayInner(props: any) {
         "button",
         {
           type: "button",
-          className: "ghsp-row",
+          className: "ghsp-row" + (isSelected ? " sel" : ""),
           onClick: function () {
             if (props.onOpenPr) props.onOpenPr({ repo: item.repo, number: item.number });
           },
@@ -1823,28 +1824,6 @@ function SessionPrOverlayInner(props: any) {
           )
         )
       ),
-      menu
-        ? React.createElement("div", {
-            className: "ghsp-menu",
-            role: "menu",
-            style: { left: menu.x + "px", top: menu.y + "px" },
-            onContextMenu: function (ev: any) { if (ev && ev.preventDefault) ev.preventDefault(); },
-          },
-            React.createElement("div", { className: "ghsp-menu-head" }, "#" + (menu.item && menu.item.number) + " " + (menu.item && menu.item.repo ? menu.item.repo : "")),
-            React.createElement("button", {
-              type: "button", role: "menuitem", className: "ghsp-menu-item",
-              onClick: function () { closeMenu(); if (props.onOpenPr) props.onOpenPr({ repo: menu.item.repo, number: menu.item.number }); },
-            }, "在面板里打开"),
-            React.createElement("button", {
-              type: "button", role: "menuitem", className: "ghsp-menu-item",
-              onClick: function () { copyPrLink(menu.item); },
-            }, "复制链接"),
-            React.createElement("button", {
-              type: "button", role: "menuitem", className: "ghsp-menu-item",
-              onClick: function () { openOnGitHub(menu.item); },
-            }, "跳转 GitHub"))
-        : null,
-      hint ? React.createElement("div", { className: "ghsp-hint" }, hint) : null,
       // tab：功能 / 项目 / CI/CD，一次只渲染一块（不做隐藏渲染，省掉另外两次请求）
       overlayTabBar(overlayTab, setOverlayTab, total),
       overlayTab === "pr" && total > visiblePrs
@@ -1879,7 +1858,31 @@ function SessionPrOverlayInner(props: any) {
                 setVisiblePrs(function (v: number) { return v + 20; });
               },
             }))
-    )
+    ),
+    // 菜单与提示条必须挂在卡片外面：卡片有 backdrop-filter + overflow:hidden，
+    // 会把 position:fixed 的子节点当成自己的包含块并裁掉 —— 右键菜单「点不出来」就是这个。
+    menu
+            ? React.createElement("div", {
+                className: "ghsp-menu",
+                role: "menu",
+                style: { left: menu.x + "px", top: menu.y + "px" },
+                onContextMenu: function (ev: any) { if (ev && ev.preventDefault) ev.preventDefault(); },
+              },
+                React.createElement("div", { className: "ghsp-menu-head" }, "#" + (menu.item && menu.item.number) + " " + (menu.item && menu.item.repo ? menu.item.repo : "")),
+                React.createElement("button", {
+                  type: "button", role: "menuitem", className: "ghsp-menu-item",
+                  onClick: function () { closeMenu(); if (props.onOpenPr) props.onOpenPr({ repo: menu.item.repo, number: menu.item.number }); },
+                }, "在面板里打开"),
+                React.createElement("button", {
+                  type: "button", role: "menuitem", className: "ghsp-menu-item",
+                  onClick: function () { copyPrLink(menu.item); },
+                }, "复制链接"),
+                React.createElement("button", {
+                  type: "button", role: "menuitem", className: "ghsp-menu-item",
+                  onClick: function () { openOnGitHub(menu.item); },
+                }, "跳转 GitHub"))
+            : null,
+    hint ? React.createElement("div", { className: "ghsp-hint" }, hint) : null
   );
 }
 

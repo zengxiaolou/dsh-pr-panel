@@ -398,6 +398,26 @@ ok(setComposerValue(ta, 'hello'), '写入返回成功');
 ok(writes.indexOf('hello') >= 0, '值确实写进了元素');
 ok(writes.indexOf('event:input') >= 0, '补发 input 事件，React 才会同步受控值');
 
+console.log('\n--- 4.20 泳道内按环境排序：Release → Test → Dev ---');
+const { stageRankOf } = await import('../lib/ui/pr-lanes.js');
+eq(stageRankOf({ baseRefName: 'main' }), 40, 'main 视为 Prod');
+eq(stageRankOf({ baseRefName: 'release_v1.0.80' }), 30, 'release 分支 = Release');
+eq(stageRankOf({ baseRefName: 'test' }), 20, 'test = Test');
+eq(stageRankOf({ baseRefName: 'development' }), 10, 'development = Dev');
+eq(stageRankOf({ baseRefName: 'feature/x' }), 0, '未知分支秩为 0');
+eq(stageRankOf({ stage: { id: 'release', order: 30 } }), 30, '优先用宿主给的 stage.order');
+eq(stageRankOf(null), 0, '空值不炸');
+
+const mkS = (n, base, head) => ({ number: n, headRefName: head, baseRefName: base, state: 'MERGED', checks: { state: 'pass', total: 3, failing: 0 } });
+const envOrdered = lanes.buildLanes([
+  mkS(1, 'development', 'fix/vcc-phone-dev'),
+  mkS(2, 'test', 'fix/vcc-phone-test'),
+  mkS(3, 'release_v1.0.80', 'fix/vcc-phone-release'),
+  mkS(4, 'main', 'fix/vcc-phone-main'),
+], 'feature');
+eq(envOrdered.length, 1, '四条同功能分支收成一条泳道');
+eq(envOrdered[0].items.map((i) => i.baseRefName).join(','), 'main,release_v1.0.80,test,development', '泳道内顺序：Prod → Release → Test → Dev');
+
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
 console.log('\n--- 4.12 CI/CD tab：本会话 PR 的 Actions（PR 校验 + 合并后） ---');
