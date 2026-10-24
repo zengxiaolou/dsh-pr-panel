@@ -7,6 +7,8 @@ export declare function resetSessionPrModuleState(): void;
 export declare function stopSessionPrPollingExport(): void;
 /** 注入/刷新本模块的样式（与主面板样式分开，避免 theme/change 时丢一半） */
 export declare function injectSessionPrStyles(): () => void;
+/** 合并两页结果：按 repo#number 去重，保持先来的顺序 */
+export declare function mergePrPages(prev: any[], next: any[]): any[];
 export declare function ciWorkflowLine(wf: any): {
     tone: string;
     text: string;

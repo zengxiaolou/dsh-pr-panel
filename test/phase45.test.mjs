@@ -427,6 +427,16 @@ ok(!isOverlayPosVisible({ x: 100, y: 2000 }, 1440, 900), 'bottom 越界不可见
 ok(!isOverlayPosVisible({ x: -400, y: 100 }, 1440, 900), '跑到左边外面不可见');
 ok(!isOverlayPosVisible({ x: NaN, y: 1 }, 1440, 900), '非法坐标不可见');
 
+console.log('\n--- 4.22 真分页：offset/limit + 合并去重 ---');
+const { mergePrPages } = await import('../lib/ui/session-pr-panel.js');
+const pageA = [{ repo: 'a/b', number: 1 }, { repo: 'a/b', number: 2 }];
+const pageB = [{ repo: 'a/b', number: 2 }, { repo: 'a/b', number: 3 }];
+eq(mergePrPages(pageA, pageB).length, 3, '两页合并后按 repo#number 去重');
+eq(mergePrPages(pageA, pageB).map((x) => x.number).join(','), '1,2,3', '保持先来后到');
+eq(mergePrPages([], pageA).length, 2, '空首页也能合并');
+eq(mergePrPages(pageA, []).length, 2, '空下一页不丢数据');
+eq(mergePrPages(null, null).length, 0, 'null 不炸');
+
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
 console.log('\n--- 4.12 CI/CD tab：本会话 PR 的 Actions（PR 校验 + 合并后） ---');
@@ -454,6 +464,10 @@ ok(client.includes('key: "changes", weight: 700'), 'diff 沉底');
 ok(client.includes('checksFailing ? 5 : 900'), '检查失败时上浮');
 ok(client.includes('isOverlayPosVisible'), '挂载时做自愈');
 ok(client.includes('"resize"'), '窗口尺寸变化也重新校正');
+ok(client.includes('&offset='), '追加请求带 offset 游标');
+ok(client.includes('PR_PAGE_SIZE = 20'), '每页 20 条');
+ok(client.includes('hasMore'), '暴露 hasMore 供滚动判断');
+ok(!client.includes('pickRecentPrs(items, panelVisible)'), '面板不再靠客户端切片');
 const routesTh = fs.readFileSync(path.join(dirname, '../lib/api/routes-actions.js'), 'utf8');
 ok(routesTh.includes('/api/github/resolve-thread'), '路由已注册 resolve-thread');
 ok(routesTh.includes('resolveReviewThread'), '用 GitHub 的 resolveReviewThread mutation');
@@ -471,8 +485,8 @@ ok(client.includes('先看「项目」里的 worktree'), '空态引导到「项�
 ok(client.includes('data-composer-chip'), '用胶囊的 DOM 标记判断是否成功');
 ok(client.includes('text.length >= 120'), '只有长文本才占用胶囊形态');
 ok(client.includes('if (after > before)') && client.includes('finish(fallback())'), '没生成胶囊会回退成纯文本，不留半截');
-ok(client.includes('pickRecentPrs(items, visiblePrs)'), '浮窗按可见条数渲染（默认 20）');
-ok(client.includes('setVisiblePrs'), '滑到底会递增可见条数');
+ok(client.includes('var recentItems = items;'), '浮窗直接用服务端分页结果（不再客户端切片）');
+ok(/if \(state\.hasMore\)[\s\S]{0,40}loadMorePrs\(\)/.test(client), '滑到底按 hasMore 拉下一页');
 eq(client.includes('已显示 '), true, '提示显示「已显示 N / M 条」');
 ok(client.includes('继续下滑加载更多'), '有「继续下滑」提示');
 ok(client.includes('var allowed = ["squash", "merge", "rebase"]'), '仓库不允许 rebase 时仍会回退到可用项');

@@ -516,6 +516,10 @@ interface SessionPrStore {
   signature: string;
   /** 窗口前的全量 PR 数：大于 items.length 时说明被 limit 截断，需要给用户提示 */
   refsTotal?: number;
+  /** 是否还有下一页（items.length < refsTotal） */
+  hasMore?: boolean;
+  /** 正在加载下一页 */
+  loadingMore?: boolean;
 }
 
 var openPanelCount = 0;
@@ -551,7 +555,26 @@ function prSignature(items: any[]) {
   }).join("|");
 }
 
-function loadSessionPrs(sid: string, force: boolean) {
+/** 每页条数：真分页的粒度（首屏只查这么多，滑到底再要下一页） */
+const PR_PAGE_SIZE = 20;
+var prLoadingMore = false;
+
+/** 合并两页结果：按 repo#number 去重，保持先来的顺序 */
+export function mergePrPages(prev: any[], next: any[]): any[] {
+  var out: any[] = Array.isArray(prev) ? prev.slice() : [];
+  var seen: any = {};
+  out.forEach(function (it: any) { if (it) seen[String(it.repo) + "#" + String(it.number)] = 1; });
+  (Array.isArray(next) ? next : []).forEach(function (it: any) {
+    if (!it) return;
+    var k = String(it.repo) + "#" + String(it.number);
+    if (seen[k]) return;
+    seen[k] = 1;
+    out.push(it);
+  });
+  return out;
+}
+
+function loadSessionPrs(sid: string, force: boolean, mode?: string) {
   if (!sid) return;
   if (force) {
     prLastForceAt = Date.now();
@@ -561,9 +584,18 @@ function loadSessionPrs(sid: string, force: boolean) {
   // 同一会话单飞；切了会话就别被上一个会话的请求挡住（它的响应会被 sid 校验丢掉）
   if (prInflightSid === sid && !force) return;
   prInflightSid = sid;
+  var appendMode = mode === "more";
+  if (appendMode) {
+    if (prLoadingMore || prStore.sid !== sid) return;
+    if (prStore.items.length >= (prStore.refsTotal || prStore.items.length)) return; // 没有更多了
+    prLoadingMore = true;
+  }
   var qs = "/api/github/session-created-prs?sessionId=" + encodeURIComponent(sid)
     + (force ? "&refresh=1" : "")
-    + (prWantFull ? "" : "&lite=1");
+    + (prWantFull ? "" : "&lite=1")
+    + (prWantFull ? "&limit=" + Math.max(PR_PAGE_SIZE, appendMode ? 0 : (prStore.sid === sid ? prStore.items.length : 0)) : "")
+    // 分页游标：请求已经拿到多少条，就从这个位置往后取
+    + (prWantFull && appendMode ? "&offset=" + prStore.items.length : "");
   fetch(qs, { headers: { accept: "application/json" } })
     .then(function (r) { return r.json(); })
     .then(function (json: any) {
@@ -571,7 +603,8 @@ function loadSessionPrs(sid: string, force: boolean) {
       if (prStore.sid !== sid) return;
       if (json && json.ok) {
         if (prFailStreak > 0) { prFailStreak = 0; schedulePolling(); }
-        var items = (json.data && json.data.items) || [];
+        var incoming = (json.data && json.data.items) || [];
+        var items = appendMode ? mergePrPages(prStore.items, incoming) : incoming;
         var sig = prSignature(items);
         if (sig === prStore.signature) {
           // 内容没变：items 保持同一引用（不触发 diff 重算），但时间戳要通知出去，
@@ -592,10 +625,13 @@ function loadSessionPrs(sid: string, force: boolean) {
             signature: sig,
             // 全量计数（items 可能被 limit 截断），供头部提示
             refsTotal: Number((json.data && json.data.refsTotal) || items.length) || items.length,
+            loadingMore: false,
           });
         }
+        prLoadingMore = false;
       } else {
         prFailStreak += 1;
+        prLoadingMore = false;
         schedulePolling();
         publishPrStore(Object.assign({}, prStore, { loading: false, error: (json && (json.error || json.message)) || "读取失败" }));
       }
@@ -699,12 +735,16 @@ function useSessionCreatedPrs(sessionId: string | null) {
   var refresh = React.useCallback(function () {
     if (sessionId) loadSessionPrs(sessionId, true);
   }, [sessionId]);
+  var loadMore = React.useCallback(function () {
+    if (sessionId) loadSessionPrs(sessionId, false, "more");
+  }, [sessionId]);
 
   // store 属于别的会话时先给一个干净的加载态，别把别人的 PR 显示出来
   var state = prStore.sid === sessionId
     ? prStore
     : { sid: sessionId, items: [], loading: Boolean(sessionId), error: null, at: 0, signature: "" };
-  return [state, refresh] as any;
+  state.hasMore = state.items.length < (state.refsTotal || state.items.length);
+  return [state, refresh, loadMore] as any;
 }
 
 function prStateKey(item: any) {
@@ -1475,6 +1515,7 @@ function SessionPrOverlayInner(props: any) {
   var pair = useSessionCreatedPrs(sessionId);
   var state = pair[0];
   var refresh = pair[1];
+  var loadMorePrs = pair[2];
   var [open, setOpen] = React.useState(false);
   // 浮窗 tab：功能 / 项目 / CI-CD
   var [overlayTab, setOverlayTab] = React.useState("pr");
@@ -1666,7 +1707,8 @@ function SessionPrOverlayInner(props: any) {
     : null;
 
   // 首帧 lite 只回了编号：这时按阶段切段会先冒出假的 Other 段，先平铺
-  var recentItems = pickRecentPrs(items, visiblePrs);
+  // 真分页：items 本身就是「已经拉回来的前 N 页」，不再做客户端切片
+  var recentItems = items;
   // 没有 PR 时默认打开「项目」：它是唯一在无 PR 情况下仍然有内容的视图
   React.useEffect(function () {
     if (items.length === 0 && overlayTab === "pr" && !state.loading) setOverlayTab("project");
@@ -1896,8 +1938,8 @@ function SessionPrOverlayInner(props: any) {
       ),
       // tab：功能 / 项目 / CI/CD，一次只渲染一块（不做隐藏渲染，省掉另外两次请求）
       overlayTabBar(overlayTab, setOverlayTab, total),
-      overlayTab === "pr" && total > visiblePrs
-        ? React.createElement("div", { className: "ghsp-empty2" }, "已显示 " + visiblePrs + " / " + total + " 条，继续下滑加载更多")
+      overlayTab === "pr" && state.hasMore
+        ? React.createElement("div", { className: "ghsp-empty2" }, "已显示 " + total + " / " + (state.refsTotal || total) + " 条，继续下滑加载更多")
         : null,
       overlayTab === "project"
         ? React.createElement(WorkspaceBlock, {
@@ -1925,7 +1967,7 @@ function SessionPrOverlayInner(props: any) {
               mode: "feature",
               rowFn: overlayRow,
               onLoadMore: function () {
-                setVisiblePrs(function (v: number) { return v + 20; });
+                if (state.hasMore) loadMorePrs();
               },
             }))
     ),
@@ -2535,6 +2577,7 @@ function SessionPrPanelBody(props: any) {
   var sessionId = (props && props.sessionId) || null;
   var pair = useSessionCreatedPrs(sessionId);
   var list = pair[0];
+  var loadMorePrs = pair[2];
 
   var initialNumber = Number(params.number) || null;
   var [selected, setSelected] = React.useState(initialNumber);
@@ -2980,10 +3023,10 @@ function SessionPrPanelBody(props: any) {
               return React.createElement("ul", { className: "ghsp-list", style: { padding: "6px" } }, items.map(panelRow));
             }
             return React.createElement(Lanes, {
-              items: pickRecentPrs(items, panelVisible),
+              items: items,
               mode: "feature",
               rowFn: panelRow,
-              onLoadMore: function () { setPanelVisible(function (v: number) { return v + 20; }); },
+              onLoadMore: function () { if (list.hasMore) loadMorePrs(); },
             });
           })()
     );
