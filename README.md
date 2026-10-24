@@ -1,5 +1,8 @@
 # dsh-pr-panel
 
+![dsh-pr-panel](https://raw.githubusercontent.com/zengxiaolou/dsh-pr-panel/main/docs/images/promo.png)
+
+
 **本会话 PR 浮窗 + 右列审阅面板。** Agent 说「PR 已创建」之后，你不用切浏览器：右下角留一个入口，点开就是状态、CI、评审意见与合并按钮。
 
 > 前身是 [dsh-github-flow](https://github.com/ItQianChen/dsh-github-flow) 的本地分叉；这一版只保留本会话 PR 通道与 Agent 的 `github_*` 工具集。从旧版裁剪掉的部分见文末「历史」。
