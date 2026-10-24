@@ -452,6 +452,24 @@ eq(lanes.buildLanes(items2, 'feature')[0].items.map((i) => i.baseRefName).join('
 setLaneSort({ env: 'desc' });
 eq(getLaneSort().env, 'desc', '偏好可读回');
 
+console.log('\n--- 4.23 不变量：PENDING 泳道永远在最上面 ---');
+const mkL = (n, base, head, state) => ({ number: n, headRefName: head, baseRefName: base, state, checks: { state: 'pass', total: 1, failing: 0 } });
+const mixed = [
+  mkL(1, 'main', 'fix/aaa-main', 'MERGED'),
+  mkL(2, 'development', 'fix/aaa-dev', 'OPEN'),
+  mkL(3, 'test', 'fix/bbb-test', 'MERGED'),
+  mkL(4, 'release_v1.0.80', 'fix/ccc-release', 'CLOSED'),
+  mkL(5, 'test', 'fix/ddd-test', 'OPEN'),
+];
+for (const env of ['desc', 'asc']) {
+  setLaneSort({ env });
+  const order = lanes.buildLanes(mixed, 'feature').map((l) => l.chip);
+  eq(order[0], 'PENDING', `环境方向=${env} 时，第一条泳道必须是 PENDING`);
+  ok(order.indexOf('PENDING') < order.indexOf('DONE'), `环境方向=${env}：PENDING 在 DONE 之前`);
+  ok(order.indexOf('DONE') < order.indexOf('CLOSED'), `环境方向=${env}：DONE 在 CLOSED 之前`);
+}
+setLaneSort({ env: 'desc' });
+
 console.log('\n--- 5. 样式与模块真的进了 bundle ---');
 const client = fs.readFileSync(path.join(dirname, '../lib/client.js'), 'utf8');
 console.log('\n--- 4.12 CI/CD tab：本会话 PR 的 Actions（PR 校验 + 合并后） ---');

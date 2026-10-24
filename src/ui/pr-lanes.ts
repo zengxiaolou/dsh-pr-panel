@@ -266,6 +266,8 @@ export function groupItemsByFeature(items: any[]) {
   });
 
   // 未完成的排最前面（要处理的事），再 done，最后 closed；同状态内按最远阶段（Dev 在前）
+  // 不变量（用户明确要求，别改）：泳道之间永远是「PENDING → DONE → CLOSED」。
+  // 环境方向（↓/↑）只影响泳道内部，任何情况下都不能让 DONE 排到 PENDING 上面。
   var STATUS_ORDER: any = { pending: 0, done: 1, closed: 2 };
   out.sort(function (a: any, b: any) {
     var sa = STATUS_ORDER[featureStatusOf(a.items).status];
