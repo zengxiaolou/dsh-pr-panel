@@ -1617,12 +1617,9 @@ function SessionPrOverlayInner(props: any) {
   // 面板已经打开时不再悬浮：它盖住的就是刚打开的那一栏
   // 不再根据「面板是否打开」隐藏浮窗：DSH 的标签页隐藏方式不止一种，
   // 判断可见性反而制造了「打开一次面板浮窗就消失」的问题。浮窗常驻，代价只是可能重复一点。
-  // 只在两个确实没法用的情况下隐藏：
-  //   1) 拿不到当前会话（没有它连 cwd 都没有）
-  //   2) 右列 PR 面板已经打开（同屏不重复展示）
-  // 没有 PR 也照常显示入口——「项目」与「CI/CD」两个视图不依赖 PR 数据，
-  // 而且用户需要知道这个插件在、入口在哪。
-  if (!sessionId) return null;
+  // 浮窗常驻：拿不到会话也显示（卡片里说明未绑定），不再有任何隐藏条件。
+  // 反复出现的「浮窗消失」都源于隐藏判据，这类判断的收益远小于它的故障成本。
+  var unbound = !sessionId;
 
   var headline = items[0];
   var total = items.length;
@@ -1679,6 +1676,33 @@ function SessionPrOverlayInner(props: any) {
       if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
     } catch (e) { /* 忽略 */ }
   }, [selIdx]);
+
+  // 排障用：把「有没有会话 / 多少个 PR / 是否展开」报给宿主，可 curl 查看
+  React.useEffect(function () {
+    var last = 0;
+    var send = function () {
+      var now = Date.now();
+      if (now - last < 5000) return;
+      last = now;
+      try {
+        fetch("/api/github/client-status", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            component: "overlay",
+            sessionId: sessionId || null,
+            items: items.length,
+            total: total,
+            open: Boolean(open),
+            tab: overlayTab,
+          }),
+        }).catch(function () { /* 上报失败不影响界面 */ });
+      } catch (e) { /* 忽略 */ }
+    };
+    send();
+    var timer = setInterval(send, 5000);
+    return function () { clearInterval(timer); };
+  }, [sessionId, items.length, open, overlayTab]);
 
   var pendingOnly = items.every(function (it: any) { return it.pending; });
 
@@ -1759,9 +1783,11 @@ function SessionPrOverlayInner(props: any) {
         },
         renderOctocat(13, "currentColor"),
         React.createElement("span", { className: "ghsp-pill-text" }, "PR"),
-        total > 0
-          ? React.createElement("span", { className: "ghsp-pill-delta" }, "#" + headline.number)
-          : React.createElement("span", { className: "ghsp-pill-empty" }, "本会话暂无"),
+        unbound
+          ? React.createElement("span", { className: "ghsp-pill-empty" }, "未绑定")
+          : (total > 0
+            ? React.createElement("span", { className: "ghsp-pill-delta" }, "#" + headline.number)
+            : React.createElement("span", { className: "ghsp-pill-empty" }, "本会话暂无")),
         total > 1 ? React.createElement("span", { className: "ghsp-pill-count" }, String(total)) : null,
         truncatedHint
           ? React.createElement("span", { className: "ghsp-pill-count", title: truncatedHint }, "…")

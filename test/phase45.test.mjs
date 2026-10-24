@@ -453,6 +453,9 @@ ok(client.includes('本会话暂无'), '空会话的口袋显示占位而不是 
 ok(!client.includes('usePrPanelOnScreen'), '不再按面板可见性隐藏浮窗（问题太多，常驻）');
 ok(!client.includes('if (openPanelCount > 0) return null'), '打开面板不会隐藏浮窗');
 ok(!client.includes('panelOnScreen'), '完全移除浮窗的显隐判断');
+ok(!client.includes('if (!sessionId) return null'), '拿不到会话也不再隐藏浮窗');
+ok(client.includes('ghsp-pill-empty'), '未绑定时药丸显示「未绑定」');
+ok(client.includes('/api/github/client-status'), '客户端会向宿主上报状态（排障用）');
 ok(client.includes('先看「项目」里的 worktree'), '空态引导到「项目」');
 ok(client.includes('data-composer-chip'), '用胶囊的 DOM 标记判断是否成功');
 ok(client.includes('text.length >= 120'), '只有长文本才占用胶囊形态');

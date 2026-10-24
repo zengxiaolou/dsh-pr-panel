@@ -1739,6 +1739,40 @@ function findRepoPathUnder(workspacePath: string, wanted: string, identityOf: (p
     },
   });
 
+  // 13h. 客户端上报状态（只用于排障，环形缓冲，不落盘）
+  //
+  // 浮窗「看不见」这类问题没有日志可查：组件是否挂载、拿到哪个 sessionId、
+  // 有多少条 PR，全都只在浏览器内存里。让客户端定期上报一份最小快照，
+  // 就能用 curl 直接看到，而不是靠猜。
+  const clientBeacons: any[] = [];
+  bindRoute({
+    kind: 'exact',
+    path: '/api/github/client-status',
+    handler: async (req: any, res: any) => {
+      try {
+        if (req.method === 'POST') {
+          const payload: any = await readJsonBodySafe(req);
+          clientBeacons.push({
+            at: Date.now(),
+            ...((payload && typeof payload === 'object') ? payload : { raw: String(payload) }),
+          });
+          while (clientBeacons.length > 20) clientBeacons.shift();
+          // 落盘一份：宿主的 API 有鉴权，外部 curl 读不到内存，但可以读文件
+          try {
+            const dir = path.join(os.homedir(), '.dsh', 'data', 'dsh-pr-panel');
+            fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(path.join(dir, 'client-status.json'), JSON.stringify({ at: Date.now(), beacons: clientBeacons }, null, 1));
+          } catch (e) { /* 落盘失败不影响主流程 */ }
+          sendJson(res, 200, { ok: true, data: { kept: clientBeacons.length } });
+          return;
+        }
+        sendJson(res, 200, { ok: true, data: { at: Date.now(), beacons: clientBeacons } });
+      } catch (err: any) {
+        sendJson(res, 500, { ok: false, error: err?.message || '记录失败' });
+      }
+    },
+  });
+
   // 13d. 工作区信息  // 13d. 工作区信息：本会话涉及的每个项目 + 各自的 worktree
   //
   // 一个会话里可能同时有多个项目（聚合根工作区），每个项目又有自己的 worktree 组。
