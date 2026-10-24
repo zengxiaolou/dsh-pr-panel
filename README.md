@@ -36,7 +36,7 @@ dsh plugin --profile <profile> add ./dsh-pr-panel-0.1.0.tgz
 | 右列面板 | 右栏 `PR` 标签 | 点浮窗任意一行，或以 `number`（+ `repo`）参数打开标签；容器 <620px 时卡片叠成单列 |
 | 对话里的 PR 链接 | 任意 `github.com/<o>/<r>/pull/<n>` | 直接在本地面板打开（读本地 `gh`，秒开），不再跳没有登录态的内嵌浏览器；Shift / ⌘ + 点击维持网页版 |
 
-![浮窗卡片：两行布局 + 目标分支色](docs/images/session-pr-card.png)
+![浮窗卡片：两行布局 + 目标分支色](https://raw.githubusercontent.com/zengxiaolou/dsh-pr-panel/main/docs/images/session-pr-card.png)
 
 ### 浮窗的三个视图
 
@@ -44,7 +44,7 @@ dsh plugin --profile <profile> add ./dsh-pr-panel-0.1.0.tgz
 
 | 功能 | 项目 | CI/CD |
 | :---: | :---: | :---: |
-| ![功能视图](docs/images/overlay-feature.png) | ![项目视图](docs/images/overlay-project.png) | ![CI/CD 视图](docs/images/overlay-ci.png) |
+| ![功能视图](https://raw.githubusercontent.com/zengxiaolou/dsh-pr-panel/main/docs/images/overlay-feature.png) | ![项目视图](https://raw.githubusercontent.com/zengxiaolou/dsh-pr-panel/main/docs/images/overlay-project.png) | ![CI/CD 视图](https://raw.githubusercontent.com/zengxiaolou/dsh-pr-panel/main/docs/images/overlay-ci.png) |
 
 - **功能**：按分支链把同一个功能的 PR 收进一条泳道。泳道头是完成度（`PENDING` / `DONE` / `CLOSED`），不是环境；环境在每行的 `→ 目标分支` 上。列表先给 20 条，滑到底续 20 条。
   - 行内右侧直接给检查通过数（`9/9`）；需要你处理的打标记：`!` 表示 CI 失败或有冲突，`待` 表示要求修改或等你评审。泳道内这些行自动排到前面。
@@ -73,11 +73,11 @@ dsh plugin --profile <profile> add ./dsh-pr-panel-0.1.0.tgz
 | 评审 | 评审人与结论徽标（已批准 / 需要修改 / 待评审） |
 | 操作 | 请求修改、发 PR 评论（自己的 PR 也能发）、合并后删除源分支开关 |
 
-![面板：卡片分区 + 懒加载 diff](docs/images/session-pr-panel.png)
+![面板：卡片分区 + 懒加载 diff](https://raw.githubusercontent.com/zengxiaolou/dsh-pr-panel/main/docs/images/session-pr-panel.png)
 
 窄面板（<620px）下卡片自动叠成单列：
 
-![窄面板：卡片叠成单列](docs/images/session-pr-panel-narrow.png)
+![窄面板：卡片叠成单列](https://raw.githubusercontent.com/zengxiaolou/dsh-pr-panel/main/docs/images/session-pr-panel-narrow.png)
 
 头部就是审批台：`批准`、`合并`、`自动合并`、合并方式下拉（按仓库 `allow_*_merge` 过滤）。合并两步确认——5 秒内再点一次才真的合。
 
@@ -87,7 +87,7 @@ dsh plugin --profile <profile> add ./dsh-pr-panel-0.1.0.tgz
 
 **fix 提示词**：检查卡的 `fix` 不是一句「帮我修 CI」，而是一段可执行工单——坐标（`owner/repo#编号`、目标分支←源分支、当前 HEAD、评审结论）、失败项（检查名 + workflow + 详情 URL + 是否评审门禁）、步骤（先 `gh run view --log-failed` 定位 → 最小改动 → 本地等价命令 → 推源分支 → `gh pr checks --watch` 确认真的重跑 / `gh run rerun --failed` → 门禁类要重新请求评审）、完成标准。评审意见的 `fix` 按编号批量拼成一条消息，带「新提交才算处理完 → 重新请求复审 → 对应 thread 回复并 resolve」收尾。提示词经 `inputActions.insertText` 进输入框（拿不到退 `setDraft`，再退剪贴板），只等你按回车。
 
-![fix 队列](docs/images/session-pr-fix-queue.png)
+![fix 队列](https://raw.githubusercontent.com/zengxiaolou/dsh-pr-panel/main/docs/images/session-pr-fix-queue.png)
 
 ## 取数与缓存
 
